@@ -441,6 +441,40 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         log::info!("Added source_page_id column to issue_candidates table");
     }
 
+    // Synced issues table - tracks Notion pages synced to GitHub/GitLab
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS synced_issues (
+            id TEXT PRIMARY KEY,
+            source_page_id TEXT NOT NULL,
+            source_database_id TEXT NOT NULL,
+            target_system TEXT NOT NULL,
+            target_project TEXT NOT NULL,
+            target_issue_id TEXT NOT NULL,
+            target_issue_number INTEGER NOT NULL,
+            target_issue_url TEXT NOT NULL,
+            title TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(source_page_id, target_system, target_project)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_synced_issues_source ON synced_issues(source_page_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_synced_issues_target ON synced_issues(target_system, target_project)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_synced_issues_database ON synced_issues(source_database_id)",
+        [],
+    )?;
+
     log::info!("Database schema initialized");
     Ok(())
 }

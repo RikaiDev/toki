@@ -144,6 +144,73 @@ You can override automatic detection:
 toki config set notion.time_property "Hours Spent"
 ```
 
+### Notion to GitHub/GitLab Sync
+
+Sync Notion database pages to GitHub or GitLab issues:
+
+```bash
+# Configure GitHub token
+toki config set github.token <your-github-pat>
+
+# Configure GitLab token (for gitlab.com)
+toki config set gitlab.token <your-gitlab-pat>
+
+# For self-hosted GitLab
+toki config set gitlab.api_url https://gitlab.your-company.com
+
+# Sync Notion pages to GitHub issues
+toki notion sync-to-github --database <database-id> --repo owner/repo
+
+# Sync Notion pages to GitLab issues
+toki notion sync-to-gitlab --database <database-id> --project group/project
+
+# Check sync status
+toki notion sync-status --database <database-id>
+
+# Dry-run mode (preview without creating issues)
+toki notion sync-to-github --database <database-id> --repo owner/repo --dry-run
+```
+
+### MCP Server (for AI Agents)
+
+Toki includes an MCP (Model Context Protocol) server for AI agents like Claude Desktop:
+
+```bash
+# Build the MCP server
+cargo build --release -p toki-mcp
+
+# Run the MCP server (uses stdio transport)
+./target/release/toki-mcp
+```
+
+#### Claude Desktop Configuration
+
+Add to your `~/.config/claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "toki": {
+      "command": "/path/to/toki-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+#### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `notion_list_databases` | List all accessible Notion databases |
+| `notion_list_pages` | List pages in a Notion database |
+| `notion_sync_to_github` | Sync Notion pages to GitHub Issues |
+| `notion_sync_to_gitlab` | Sync Notion pages to GitLab Issues |
+| `notion_sync_status` | Show sync history for a database |
+| `project_list` | List tracked projects |
+| `config_get` | Get a configuration value |
+| `config_set` | Set a configuration value |
+
 ---
 
 ## Architecture
@@ -156,7 +223,8 @@ toki/
 │   ├── toki-storage/       # SQLite database, models, migrations
 │   ├── toki-ai/            # Semantic gravity, embeddings, issue matching
 │   ├── toki-detector/      # Git parsing, IDE workspace detection
-│   └── toki-integrations/  # Plane.so, Notion APIs, webhooks
+│   ├── toki-integrations/  # Plane.so, Notion, GitHub, GitLab APIs
+│   └── toki-mcp/           # MCP server for AI agent integration
 └── contrib/
     ├── toki.plist          # macOS launchd service
     └── toki.service        # Linux systemd service
@@ -234,7 +302,9 @@ TOKI_DB_PATH=...    # Custom database path
 - [x] AI semantic gravity classification
 - [x] Local embedding-based issue matching
 - [x] Notion database integration
-- [ ] GitHub Issues integration
+- [x] GitHub Issues integration
+- [x] GitLab Issues integration (including self-hosted)
+- [x] MCP server for AI agents
 - [ ] Jira integration
 - [ ] Linear integration
 - [ ] Web dashboard

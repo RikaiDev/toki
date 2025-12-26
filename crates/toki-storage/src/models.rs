@@ -491,6 +491,66 @@ pub struct IntegrationConfig {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Synced issue - tracks issues synced from Notion to GitHub/GitLab
+///
+/// This tracks the relationship between a source Notion page and
+/// the created issue in the target system (GitHub/GitLab).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncedIssue {
+    pub id: Uuid,
+    /// Source Notion page ID
+    pub source_page_id: String,
+    /// Source Notion database ID
+    pub source_database_id: String,
+    /// Target system ("github" or "gitlab")
+    pub target_system: String,
+    /// Target repository/project identifier (e.g., "owner/repo" or project ID)
+    pub target_project: String,
+    /// Created issue ID in target system
+    pub target_issue_id: String,
+    /// Created issue number (e.g., #123)
+    pub target_issue_number: u64,
+    /// Created issue URL
+    pub target_issue_url: String,
+    /// Issue title at time of sync
+    pub title: String,
+    /// When the issue was first synced
+    pub created_at: DateTime<Utc>,
+    /// When the issue was last updated/re-synced
+    pub updated_at: DateTime<Utc>,
+}
+
+impl SyncedIssue {
+    /// Create a new synced issue record
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        source_page_id: String,
+        source_database_id: String,
+        target_system: String,
+        target_project: String,
+        target_issue_id: String,
+        target_issue_number: u64,
+        target_issue_url: String,
+        title: String,
+    ) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            source_page_id,
+            source_database_id,
+            target_system,
+            target_project,
+            target_issue_id,
+            target_issue_number,
+            target_issue_url,
+            title,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+}
+
 impl IntegrationConfig {
     #[must_use]
     pub fn new(system_type: String, api_url: String, api_key: String) -> Self {

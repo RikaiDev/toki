@@ -1,32 +1,34 @@
 [package]
-name = "toki-integrations"
+name = "toki-mcp"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "MCP (Model Context Protocol) server for Toki time tracking"
+
+[[bin]]
+name = "toki-mcp"
+path = "src/main.rs"
 
 [dependencies]
+# Workspace dependencies
 anyhow.workspace = true
 thiserror.workspace = true
 log.workspace = true
+env_logger.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
+tokio.workspace = true
 async-trait.workspace = true
-uuid.workspace = true
+chrono.workspace = true
 
-# HTTP client
-reqwest = { workspace = true, features = ["json"] }
-tokio = { workspace = true, features = ["macros"] }
+# MCP SDK - use git version for latest API
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", features = ["server", "transport-io", "macros"] }
 
-# Webhook signature verification
-hmac-sha256 = "1.1"
-
-# Async recursion for Notion block fetching
-async-recursion = "1.0"
-
-# URL encoding for API queries
-urlencoding = "2.1"
+# Internal crates
+toki-storage = { path = "../toki-storage" }
+toki-integrations = { path = "../toki-integrations" }
+toki-ai = { path = "../toki-ai" }
 
 [lints.rust]
 unsafe_code = "forbid"
@@ -41,4 +43,3 @@ complexity = "deny"
 cognitive_complexity = "deny"
 too_many_arguments = "deny"
 non_ascii_literal = "deny"
-

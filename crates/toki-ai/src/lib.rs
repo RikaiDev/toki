@@ -4,6 +4,8 @@ pub mod gravity;
 pub mod insights;
 pub mod issue_matcher;
 pub mod issue_sync;
+pub mod notion_issue_sync;
+pub mod notion_mapper;
 pub mod rules;
 pub mod time_analyzer;
 
@@ -15,6 +17,8 @@ pub use issue_matcher::{
     ActivitySignals, CandidateIssue, IssueMatch, IssueMatcher, MatchReason, SmartIssueMatcher,
 };
 pub use issue_sync::{IssueSyncService, SyncStats};
+pub use notion_issue_sync::{NotionIssueSyncService, SyncOptions, SyncOutcome, SyncResult, SyncTarget};
+pub use notion_mapper::{IssueMappingConfig, NotionIssueMapper};
 pub use rules::RuleEngine;
 pub use time_analyzer::{
     ActivitySegment, DailySummaryReport, SuggestedIssue, SuggestedTimeBlock, TimeAnalyzer,

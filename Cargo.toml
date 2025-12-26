@@ -7,6 +7,7 @@ members = [
     "crates/toki-cli",
     "crates/toki-detector",
     "crates/toki-integrations",
+    "crates/toki-mcp",
 ]
 
 [workspace.package]

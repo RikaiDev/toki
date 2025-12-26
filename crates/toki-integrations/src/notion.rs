@@ -1880,18 +1880,18 @@ mod tests {
     #[test]
     fn test_detect_property_mapping_japanese_conventions() {
         let db = create_test_database(vec![
-            ("タイトル", "title"),
-            ("ステータス", "status"),
-            ("説明", "rich_text"),
-            ("作業時間", "number"),
+            ("\u{30bf}\u{30a4}\u{30c8}\u{30eb}", "title"),
+            ("\u{30b9}\u{30c6}\u{30fc}\u{30bf}\u{30b9}", "status"),
+            ("\u{8aac}\u{660e}", "rich_text"),
+            ("\u{4f5c}\u{696d}\u{6642}\u{9593}", "number"),
         ]);
 
         let mapping = db.detect_property_mapping(None);
 
-        assert_eq!(mapping.title, Some("タイトル".to_string()));
-        assert_eq!(mapping.status, Some("ステータス".to_string()));
-        assert_eq!(mapping.description, Some("説明".to_string()));
-        assert_eq!(mapping.time, Some("作業時間".to_string()));
+        assert_eq!(mapping.title, Some("\u{30bf}\u{30a4}\u{30c8}\u{30eb}".to_string()));
+        assert_eq!(mapping.status, Some("\u{30b9}\u{30c6}\u{30fc}\u{30bf}\u{30b9}".to_string()));
+        assert_eq!(mapping.description, Some("\u{8aac}\u{660e}".to_string()));
+        assert_eq!(mapping.time, Some("\u{4f5c}\u{696d}\u{6642}\u{9593}".to_string()));
     }
 
     #[test]
@@ -1899,17 +1899,17 @@ mod tests {
         // Database with a mix of English and Chinese property names
         let db = create_test_database(vec![
             ("Name", "title"),
-            ("狀態", "status"),      // Chinese for Status
+            ("\u{72c0}\u{614b}", "status"),      // Chinese for Status
             ("Description", "rich_text"),
-            ("工時", "number"),      // Chinese for Hours
+            ("\u{5de5}\u{6642}", "number"),      // Chinese for Hours
         ]);
 
         let mapping = db.detect_property_mapping(None);
 
         assert_eq!(mapping.title, Some("Name".to_string()));
-        assert_eq!(mapping.status, Some("狀態".to_string()));
+        assert_eq!(mapping.status, Some("\u{72c0}\u{614b}".to_string()));
         assert_eq!(mapping.description, Some("Description".to_string()));
-        assert_eq!(mapping.time, Some("工時".to_string()));
+        assert_eq!(mapping.time, Some("\u{5de5}\u{6642}".to_string()));
     }
 
     #[test]
@@ -2026,8 +2026,8 @@ mod tests {
         ]);
 
         // Extract values
-        let title = page.properties.get("Name").and_then(|p| p.as_plain_text());
-        let status = page.properties.get("Status").and_then(|p| p.as_select_name());
+        let title = page.properties.get("Name").and_then(super::NotionPropertyValue::as_plain_text);
+        let status = page.properties.get("Status").and_then(super::NotionPropertyValue::as_select_name);
 
         assert_eq!(title, Some("Test Task".to_string()));
         assert_eq!(status, Some("In Progress".to_string()));
