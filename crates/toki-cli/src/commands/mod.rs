@@ -12,6 +12,7 @@ pub mod project;
 pub mod report;
 pub mod review;
 pub mod session;
+pub mod standup;
 pub mod suggest;
 pub mod summary;
 pub mod sync;

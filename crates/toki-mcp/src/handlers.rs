@@ -14,6 +14,7 @@ use rmcp::{
 };
 use toki_ai::{NotionIssueSyncService, SyncOptions, SyncOutcome};
 use toki_ai::issue_matcher::{ActivitySignals, SmartIssueMatcher};
+use toki_ai::standup::{StandupFormat, StandupGenerator};
 use toki_ai::work_summary::{SummaryPeriod, WorkSummaryGenerator};
 use toki_detector::git::GitDetector;
 use toki_integrations::{GitHubClient, GitLabClient, NotionClient};
@@ -86,6 +87,15 @@ pub struct GenerateSummaryRequest {
     pub format: Option<String>,
     #[schemars(description = "Optional project name or path to filter by")]
     pub project: Option<String>,
+}
+
+/// Request for generating standup report
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GenerateStandupRequest {
+    #[schemars(description = "Output format: text, markdown, slack, discord, teams, json (default: text)")]
+    pub format: Option<String>,
+    #[schemars(description = "Date to generate standup for (YYYY-MM-DD format, defaults to today)")]
+    pub date: Option<String>,
 }
 
 /// Toki MCP Service
@@ -551,6 +561,37 @@ impl TokiService {
                     .join("\n")
             }
         };
+
+        Ok(CallToolResult::success(vec![Content::text(output)]))
+    }
+
+    /// Generate a standup report
+    #[tool(description = "Generate a standup report with yesterday's work, today's tasks, and blockers. Perfect for daily standup meetings. Supports multiple formats for Slack, Discord, Teams, or plain text.")]
+    async fn generate_standup(
+        &self,
+        Parameters(req): Parameters<GenerateStandupRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let generator = StandupGenerator::new(self.db.clone());
+
+        // Parse optional date
+        let parsed_date = if let Some(date_str) = &req.date {
+            match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                Ok(date) => Some(date),
+                Err(_) => {
+                    return Ok(CallToolResult::success(vec![Content::text(
+                        format!("Invalid date format '{}'. Use YYYY-MM-DD", date_str)
+                    )]));
+                }
+            }
+        } else {
+            None
+        };
+
+        let report = generator.generate(parsed_date)
+            .map_err(|e| Self::format_error(e.into()))?;
+
+        let format = StandupFormat::parse(req.format.as_deref().unwrap_or("text"));
+        let output = report.format(format);
 
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }

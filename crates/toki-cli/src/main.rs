@@ -125,6 +125,15 @@ enum Commands {
         #[command(subcommand)]
         action: commands::summary::SummaryAction,
     },
+    /// Generate standup report (yesterday/today/blockers)
+    Standup {
+        /// Output format: text, markdown, slack, discord, teams, json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+        /// Date to generate standup for (YYYY-MM-DD format, defaults to today)
+        #[arg(short, long)]
+        date: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -237,5 +246,8 @@ async fn main() -> Result<()> {
         }
         Commands::Session { action } => commands::session::handle_session_command(action).await,
         Commands::Summary { action } => commands::summary::handle_summary_command(action),
+        Commands::Standup { format, date } => {
+            commands::standup::handle_standup_command(&format, date.as_deref())
+        }
     }
 }
