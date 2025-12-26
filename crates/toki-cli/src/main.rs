@@ -103,6 +103,18 @@ enum Commands {
         #[command(subcommand)]
         action: commands::project::ProjectAction,
     },
+    /// Suggest issues based on current git context
+    SuggestIssue {
+        /// Path to analyze (defaults to current directory)
+        #[arg(short, long)]
+        path: Option<std::path::PathBuf>,
+        /// Maximum number of suggestions
+        #[arg(short = 'n', long, default_value = "5")]
+        max: usize,
+        /// Automatically link to the best match
+        #[arg(short, long)]
+        apply: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -210,5 +222,8 @@ async fn main() -> Result<()> {
         Commands::IssueSync { force } => commands::issue_sync::handle_issue_sync_command(force).await,
         Commands::Project { action } => commands::project::handle_project_command(action).await,
         Commands::Notion { action } => commands::notion::handle_notion_command(action).await,
+        Commands::SuggestIssue { path, max, apply } => {
+            commands::suggest::run(path, max, apply)
+        }
     }
 }

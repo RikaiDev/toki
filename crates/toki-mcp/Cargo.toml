@@ -29,6 +29,7 @@ rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", features = ["
 toki-storage = { path = "../toki-storage" }
 toki-integrations = { path = "../toki-integrations" }
 toki-ai = { path = "../toki-ai" }
+toki-detector = { path = "../toki-detector" }
 
 [lints.rust]
 unsafe_code = "forbid"

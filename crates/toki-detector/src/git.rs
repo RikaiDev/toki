@@ -110,6 +110,74 @@ impl GitDetector {
 
         Ok(None)
     }
+
+    /// Get the current branch name
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository cannot be opened
+    pub fn get_branch_name(&self, repo_path: &Path) -> Result<Option<String>> {
+        let repo = Repository::open(repo_path)
+            .with_context(|| format!("Failed to open Git repository at {}", repo_path.display()))?;
+
+        let head = repo.head()?;
+        Ok(head.shorthand().map(String::from))
+    }
+
+    /// Get recent commit messages
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository cannot be opened
+    pub fn get_recent_commits(&self, repo_path: &Path, count: usize) -> Result<Vec<String>> {
+        let repo = Repository::open(repo_path)
+            .with_context(|| format!("Failed to open Git repository at {}", repo_path.display()))?;
+
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+
+        let mut messages = Vec::new();
+        for oid in revwalk.take(count).filter_map(|r| r.ok()) {
+            if let Ok(commit) = repo.find_commit(oid) {
+                if let Some(msg) = commit.message() {
+                    // Take first line only
+                    let first_line = msg.lines().next().unwrap_or("").to_string();
+                    if !first_line.is_empty() {
+                        messages.push(first_line);
+                    }
+                }
+            }
+        }
+
+        Ok(messages)
+    }
+
+    /// Get list of changed files (staged + unstaged)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the repository cannot be opened
+    pub fn get_changed_files(&self, repo_path: &Path) -> Result<Vec<String>> {
+        let repo = Repository::open(repo_path)
+            .with_context(|| format!("Failed to open Git repository at {}", repo_path.display()))?;
+
+        let mut files = Vec::new();
+
+        // Get diff between HEAD and working directory
+        if let Ok(head) = repo.head() {
+            if let Ok(tree) = head.peel_to_tree() {
+                if let Ok(diff) = repo.diff_tree_to_workdir_with_index(Some(&tree), None) {
+                    for delta in diff.deltas() {
+                        if let Some(path) = delta.new_file().path() {
+                            files.push(path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(files)
+    }
 }
 
 impl Default for GitDetector {

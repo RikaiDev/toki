@@ -1709,6 +1709,29 @@ impl Database {
         Ok(result)
     }
 
+    /// Get an issue candidate by external_id (any system)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_issue_candidate_by_external_id(
+        &self,
+        external_id: &str,
+    ) -> Result<Option<IssueCandidate>> {
+        let result = self
+            .conn
+            .query_row(
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+                 FROM issue_candidates
+                 WHERE external_id = ?1",
+                params![external_id],
+                Self::row_to_issue_candidate,
+            )
+            .optional()?;
+
+        Ok(result)
+    }
+
     /// Get all Notion issue candidates with their page IDs
     ///
     /// Returns a map of external_id -> source_page_id for populating the NotionClient cache

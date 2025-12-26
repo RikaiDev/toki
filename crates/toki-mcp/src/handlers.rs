@@ -13,8 +13,11 @@ use rmcp::{
     handler::server::wrapper::Parameters,
 };
 use toki_ai::{NotionIssueSyncService, SyncOptions, SyncOutcome};
+use toki_ai::issue_matcher::{ActivitySignals, SmartIssueMatcher};
+use toki_detector::git::GitDetector;
 use toki_integrations::{GitHubClient, GitLabClient, NotionClient};
 use toki_storage::{Database, IntegrationConfig};
+use std::path::PathBuf;
 
 /// Request for listing pages in a Notion database
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -62,6 +65,15 @@ pub struct ConfigSetRequest {
     pub key: String,
     #[schemars(description = "Value to set")]
     pub value: String,
+}
+
+/// Request for suggesting issues based on git context
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SuggestIssueRequest {
+    #[schemars(description = "Path to the git repository to analyze")]
+    pub path: String,
+    #[schemars(description = "Maximum number of suggestions to return (default: 5)")]
+    pub max_suggestions: Option<usize>,
 }
 
 /// Toki MCP Service
@@ -373,6 +385,98 @@ impl TokiService {
             }
             _ => Ok(CallToolResult::success(vec![Content::text(format!("Unknown section: {section}"))])),
         }
+    }
+
+    /// Suggest issues based on current git context
+    #[tool(description = "Analyze git context (branch, commits, changed files) and suggest matching issues. Requires a path to a git repository that is linked to a toki project with synced issues.")]
+    async fn suggest_issue(
+        &self,
+        Parameters(req): Parameters<SuggestIssueRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let working_dir = PathBuf::from(&req.path);
+        let max_suggestions = req.max_suggestions.unwrap_or(5);
+
+        // Find git repository
+        let git_detector = GitDetector::new();
+        let repo_path = git_detector
+            .find_repo(&working_dir)
+            .map_err(|e| Self::format_error(e.into()))?
+            .ok_or_else(|| Self::format_error(anyhow::anyhow!("No git repository found in {}", working_dir.display())))?;
+
+        // Collect git signals
+        let branch = git_detector.get_branch_name(&repo_path)
+            .map_err(|e| Self::format_error(e.into()))?;
+        let commits = git_detector.get_recent_commits(&repo_path, 5)
+            .map_err(|e| Self::format_error(e.into()))?;
+        let files = git_detector.get_changed_files(&repo_path)
+            .map_err(|e| Self::format_error(e.into()))?;
+
+        let signals = ActivitySignals {
+            git_branch: branch.clone(),
+            recent_commits: commits.clone(),
+            edited_files: files.clone(),
+            browser_urls: Vec::new(),
+            window_titles: Vec::new(),
+        };
+
+        // Build context output
+        let mut result = String::from("Git Context Analysis:\n\n");
+        if let Some(ref b) = branch {
+            result.push_str(&format!("Branch: {b}\n"));
+        }
+        if !commits.is_empty() {
+            result.push_str("Recent commits:\n");
+            for c in &commits {
+                result.push_str(&format!("  - {c}\n"));
+            }
+        }
+        if !files.is_empty() {
+            result.push_str(&format!("Changed files: {} files\n", files.len()));
+        }
+        result.push('\n');
+
+        // Find project
+        let project = self.db
+            .get_project_by_path(repo_path.to_string_lossy().as_ref())
+            .map_err(|e| Self::format_error(e.into()))?
+            .ok_or_else(|| Self::format_error(anyhow::anyhow!(
+                "No project found for {}. Run 'toki init' in this directory first.",
+                repo_path.display()
+            )))?;
+
+        // Create matcher and find suggestions
+        let matcher = SmartIssueMatcher::new(self.db.clone())
+            .map_err(|e| Self::format_error(e.into()))?;
+
+        let suggestions = matcher.find_best_matches(&signals, project.id, max_suggestions)
+            .map_err(|e| Self::format_error(e.into()))?;
+
+        if suggestions.is_empty() {
+            result.push_str("No matching issues found.\n\n");
+            result.push_str("Possible reasons:\n");
+            result.push_str("- No issues synced for this project (run 'toki issue-sync')\n");
+            result.push_str("- Branch/commits don't match any issue patterns\n");
+            result.push_str("- Try adding issue ID to branch name (e.g., feature/PROJ-123-description)\n");
+            return Ok(CallToolResult::success(vec![Content::text(result)]));
+        }
+
+        result.push_str("Suggested Issues:\n\n");
+        for (i, suggestion) in suggestions.iter().enumerate() {
+            let confidence_pct = (suggestion.confidence * 100.0).round() as u32;
+            let reasons = SmartIssueMatcher::format_reasons(&suggestion.match_reasons);
+
+            // Get issue title from database
+            let issue_title = self.db
+                .get_issue_candidate_by_external_id(&suggestion.issue_id)
+                .map_err(|e| Self::format_error(e.into()))?
+                .map(|c| c.title)
+                .unwrap_or_else(|| "(title not found)".to_string());
+
+            result.push_str(&format!("{}. {} - {} ({}% confidence)\n", i + 1, suggestion.issue_id, issue_title, confidence_pct));
+            result.push_str(&format!("   Matched by: {reasons}\n\n"));
+        }
+
+        Ok(CallToolResult::success(vec![Content::text(result)]))
     }
 }
 
