@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "toki": {
+      "type": "stdio",
+      "command": "/Users/gloomcheng/Workspace/RikaiDev/toki/target/release/toki-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}
