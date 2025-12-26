@@ -173,43 +173,302 @@ toki notion sync-to-github --database <database-id> --repo owner/repo --dry-run
 
 ### MCP Server (for AI Agents)
 
-Toki includes an MCP (Model Context Protocol) server for AI agents like Claude Desktop:
+Toki includes an MCP (Model Context Protocol) server for AI agents. This allows AI assistants like Claude to directly interact with Toki's functionality.
+
+#### Step 1: Build the MCP Server
 
 ```bash
+# Clone the repository (if not already done)
+git clone https://github.com/RikaiDev/toki.git
+cd toki
+
 # Build the MCP server
 cargo build --release -p toki-mcp
 
-# Run the MCP server (uses stdio transport)
-./target/release/toki-mcp
+# Verify the binary exists
+ls -la target/release/toki-mcp
 ```
 
-#### Claude Desktop Configuration
+#### Step 2: Configure Your AI Platform
 
-Add to your `~/.config/claude/claude_desktop_config.json`:
+Choose your platform and follow the step-by-step instructions:
 
-```json
-{
-  "mcpServers": {
-    "toki": {
-      "command": "/path/to/toki-mcp",
-      "args": []
-    }
-  }
-}
+<details>
+<summary><b>Claude Desktop (macOS)</b></summary>
+
+1. **Locate the config file path:**
+   ```bash
+   # The config file location
+   ~/Library/Application Support/Claude/claude_desktop_config.json
+   ```
+
+2. **Create or edit the config file:**
+   ```bash
+   # Create directory if it doesn't exist
+   mkdir -p ~/Library/Application\ Support/Claude
+
+   # Create/edit the config file
+   nano ~/Library/Application\ Support/Claude/claude_desktop_config.json
+   ```
+
+3. **Add the toki MCP server configuration:**
+   ```json
+   {
+     "mcpServers": {
+       "toki": {
+         "command": "/absolute/path/to/toki/target/release/toki-mcp",
+         "args": []
+       }
+     }
+   }
+   ```
+   > ⚠️ Replace `/absolute/path/to/toki` with your actual toki directory path
+
+4. **Restart Claude Desktop:**
+   - Quit Claude Desktop completely (Cmd+Q)
+   - Reopen Claude Desktop
+
+5. **Verify the connection:**
+   - Click the 🔌 icon in Claude Desktop
+   - You should see "toki" listed as connected
+
+</details>
+
+<details>
+<summary><b>Claude Desktop (Windows)</b></summary>
+
+1. **Locate the config file path:**
+   ```
+   %APPDATA%\Claude\claude_desktop_config.json
+   ```
+
+2. **Create or edit the config file:**
+   - Open File Explorer
+   - Navigate to `C:\Users\<YourUsername>\AppData\Roaming\Claude\`
+   - Create `claude_desktop_config.json` if it doesn't exist
+
+3. **Add the toki MCP server configuration:**
+   ```json
+   {
+     "mcpServers": {
+       "toki": {
+         "command": "C:\\path\\to\\toki\\target\\release\\toki-mcp.exe",
+         "args": []
+       }
+     }
+   }
+   ```
+   > ⚠️ Use double backslashes `\\` in Windows paths
+
+4. **Restart Claude Desktop:**
+   - Close Claude Desktop from the system tray
+   - Reopen Claude Desktop
+
+5. **Verify the connection:**
+   - Click the 🔌 icon in Claude Desktop
+   - You should see "toki" listed as connected
+
+</details>
+
+<details>
+<summary><b>Claude Desktop (Linux)</b></summary>
+
+1. **Locate the config file path:**
+   ```bash
+   ~/.config/claude/claude_desktop_config.json
+   ```
+
+2. **Create or edit the config file:**
+   ```bash
+   # Create directory if it doesn't exist
+   mkdir -p ~/.config/claude
+
+   # Create/edit the config file
+   nano ~/.config/claude/claude_desktop_config.json
+   ```
+
+3. **Add the toki MCP server configuration:**
+   ```json
+   {
+     "mcpServers": {
+       "toki": {
+         "command": "/absolute/path/to/toki/target/release/toki-mcp",
+         "args": []
+       }
+     }
+   }
+   ```
+
+4. **Restart Claude Desktop:**
+   - Close Claude Desktop
+   - Reopen Claude Desktop
+
+5. **Verify the connection:**
+   - Click the 🔌 icon in Claude Desktop
+   - You should see "toki" listed as connected
+
+</details>
+
+<details>
+<summary><b>Claude Code (CLI)</b></summary>
+
+1. **Add the MCP server using CLI command:**
+   ```bash
+   # Navigate to your toki project directory
+   cd /path/to/toki
+
+   # Add toki MCP server (project scope - shared via git)
+   claude mcp add --transport stdio toki --scope project -- /absolute/path/to/toki/target/release/toki-mcp
+
+   # Or add to user scope (available in all projects)
+   claude mcp add --transport stdio toki --scope user -- /absolute/path/to/toki/target/release/toki-mcp
+   ```
+
+2. **Verify the configuration:**
+   ```bash
+   # Check MCP server status
+   claude mcp list
+
+   # Should show: toki: ... - ✓ Connected
+   ```
+
+3. **Manual configuration (alternative):**
+
+   Create `.mcp.json` in your project root:
+   ```json
+   {
+     "mcpServers": {
+       "toki": {
+         "type": "stdio",
+         "command": "/absolute/path/to/toki/target/release/toki-mcp",
+         "args": [],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+4. **Restart Claude Code:**
+   ```bash
+   # Exit current session
+   exit
+
+   # Start new session
+   claude
+   ```
+
+5. **Test the tools:**
+   - Ask Claude: "List my Notion databases using toki"
+   - Or: "Show toki projects"
+
+</details>
+
+#### Step 3: Configure Toki Integrations
+
+Before using the MCP tools, configure your API keys:
+
+```bash
+# Using toki CLI
+toki config set notion.api_key <your-notion-integration-token>
+toki config set github.token <your-github-pat>
+toki config set gitlab.token <your-gitlab-pat>
+
+# Or ask the AI to configure via MCP
+# "Set my Notion API key to ntn_xxx..."
 ```
+
+#### Step 4: Test the MCP Tools
+
+Try these commands with your AI assistant:
+
+| Request | MCP Tool Used |
+|---------|---------------|
+| "List my Notion databases" | `notion_list_databases` |
+| "Show pages in database abc123" | `notion_list_pages` |
+| "Sync Notion to GitHub repo owner/repo" | `notion_sync_to_github` |
+| "Show sync status for database abc123" | `notion_sync_status` |
+| "List toki projects" | `project_list` |
+| "Get my Notion API key" | `config_get` |
 
 #### Available MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `notion_list_databases` | List all accessible Notion databases |
-| `notion_list_pages` | List pages in a Notion database |
-| `notion_sync_to_github` | Sync Notion pages to GitHub Issues |
-| `notion_sync_to_gitlab` | Sync Notion pages to GitLab Issues |
-| `notion_sync_status` | Show sync history for a database |
-| `project_list` | List tracked projects |
-| `config_get` | Get a configuration value |
-| `config_set` | Set a configuration value |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `notion_list_databases` | List all accessible Notion databases | None |
+| `notion_list_pages` | List pages in a Notion database | `database_id` |
+| `notion_sync_to_github` | Sync Notion pages to GitHub Issues | `database_id`, `repo` |
+| `notion_sync_to_gitlab` | Sync Notion pages to GitLab Issues | `database_id`, `project` |
+| `notion_sync_status` | Show sync history for a database | `database_id` |
+| `project_list` | List tracked projects | None |
+| `config_get` | Get a configuration value | `key` |
+| `config_set` | Set a configuration value | `key`, `value` |
+
+#### Troubleshooting
+
+<details>
+<summary><b>MCP server not connecting</b></summary>
+
+1. **Check if the binary exists and is executable:**
+   ```bash
+   ls -la /path/to/toki/target/release/toki-mcp
+   chmod +x /path/to/toki/target/release/toki-mcp
+   ```
+
+2. **Test the server manually:**
+   ```bash
+   /path/to/toki/target/release/toki-mcp
+   # Should start without errors (Ctrl+C to stop)
+   ```
+
+3. **Check the path in config:**
+   - Use absolute paths, not relative paths
+   - No environment variables like `$HOME` or `~`
+
+4. **Check logs:**
+   - Claude Desktop: Check Console.app for errors
+   - Claude Code: Run `claude mcp list` for status
+
+</details>
+
+<details>
+<summary><b>Notion API errors</b></summary>
+
+1. **Verify API key is set:**
+   ```bash
+   toki config get notion.api_key
+   ```
+
+2. **Test Notion connection:**
+   ```bash
+   toki notion test
+   ```
+
+3. **Ensure database is shared with integration:**
+   - Open your Notion database
+   - Click "..." menu → "Add connections"
+   - Select your integration
+
+</details>
+
+<details>
+<summary><b>GitHub/GitLab sync errors</b></summary>
+
+1. **Verify tokens are set:**
+   ```bash
+   toki config get github.token
+   toki config get gitlab.token
+   ```
+
+2. **Check token permissions:**
+   - GitHub: Needs `repo` scope
+   - GitLab: Needs `api` scope
+
+3. **For self-hosted GitLab:**
+   ```bash
+   toki config set gitlab.api_url https://gitlab.your-company.com
+   ```
+
+</details>
 
 ---
 
