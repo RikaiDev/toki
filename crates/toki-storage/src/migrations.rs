@@ -475,6 +475,38 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // Claude sessions table - tracks Claude Code AI sessions
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS claude_sessions (
+            id TEXT PRIMARY KEY,
+            session_id TEXT UNIQUE NOT NULL,
+            project_id TEXT,
+            started_at TEXT NOT NULL,
+            ended_at TEXT,
+            end_reason TEXT,
+            tool_calls INTEGER NOT NULL DEFAULT 0,
+            prompt_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (project_id) REFERENCES projects(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_claude_sessions_session_id ON claude_sessions(session_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_claude_sessions_started_at ON claude_sessions(started_at)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_claude_sessions_project ON claude_sessions(project_id)",
+        [],
+    )?;
+
     log::info!("Database schema initialized");
     Ok(())
 }

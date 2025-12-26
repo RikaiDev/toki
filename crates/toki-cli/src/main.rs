@@ -115,6 +115,11 @@ enum Commands {
         #[arg(short, long)]
         apply: bool,
     },
+    /// Claude Code session management (for hooks integration)
+    Session {
+        #[command(subcommand)]
+        action: commands::session::SessionAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -225,5 +230,6 @@ async fn main() -> Result<()> {
         Commands::SuggestIssue { path, max, apply } => {
             commands::suggest::run(path, max, apply)
         }
+        Commands::Session { action } => commands::session::handle_session_command(action).await,
     }
 }

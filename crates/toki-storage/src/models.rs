@@ -568,6 +568,79 @@ impl IntegrationConfig {
     }
 }
 
+/// Claude Code session - tracks AI-assisted development sessions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaudeSession {
+    pub id: Uuid,
+    /// Claude Code session ID (from hook input)
+    pub session_id: String,
+    /// Associated project (detected from working directory)
+    pub project_id: Option<Uuid>,
+    /// When the session started
+    pub started_at: DateTime<Utc>,
+    /// When the session ended (None if still active)
+    pub ended_at: Option<DateTime<Utc>>,
+    /// Reason for ending (clear, logout, prompt_input_exit, other)
+    pub end_reason: Option<String>,
+    /// Number of tool calls made during session
+    pub tool_calls: u32,
+    /// Number of prompts sent during session
+    pub prompt_count: u32,
+    /// When the record was created
+    pub created_at: DateTime<Utc>,
+}
+
+impl ClaudeSession {
+    /// Create a new Claude session
+    #[must_use]
+    pub fn new(session_id: String, project_id: Option<Uuid>) -> Self {
+        let now = Utc::now();
+        Self {
+            id: Uuid::new_v4(),
+            session_id,
+            project_id,
+            started_at: now,
+            ended_at: None,
+            end_reason: None,
+            tool_calls: 0,
+            prompt_count: 0,
+            created_at: now,
+        }
+    }
+
+    /// End the session
+    pub fn end(&mut self, reason: Option<String>) {
+        self.ended_at = Some(Utc::now());
+        self.end_reason = reason;
+    }
+
+    /// Calculate session duration in seconds
+    #[must_use]
+    pub fn duration_seconds(&self) -> u32 {
+        let end = self.ended_at.unwrap_or_else(Utc::now);
+        let duration = end.signed_duration_since(self.started_at);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let secs = duration.num_seconds().max(0) as u32;
+        secs
+    }
+
+    /// Check if session is still active
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.ended_at.is_none()
+    }
+
+    /// Increment tool call count
+    pub fn increment_tool_calls(&mut self) {
+        self.tool_calls += 1;
+    }
+
+    /// Increment prompt count
+    pub fn increment_prompts(&mut self) {
+        self.prompt_count += 1;
+    }
+}
+
 /// Classification rule type - determines how the pattern is matched
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PatternType {

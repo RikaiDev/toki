@@ -11,5 +11,6 @@ pub mod privacy;
 pub mod project;
 pub mod report;
 pub mod review;
+pub mod session;
 pub mod suggest;
 pub mod sync;
