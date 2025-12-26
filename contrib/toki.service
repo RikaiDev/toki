@@ -1,0 +1,26 @@
+[Unit]
+Description=Toki Time Tracking Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+ExecStart=/usr/local/bin/toki start --interval 1
+Restart=on-failure
+RestartSec=5s
+
+# Logging
+StandardOutput=append:/home/%i/.toki/toki.log
+StandardError=append:/home/%i/.toki/toki.err.log
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/%i/.toki
+
+[Install]
+WantedBy=default.target
+
+

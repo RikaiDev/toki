@@ -1,0 +1,33 @@
+[package]
+name = "toki-storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+log.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+dirs.workspace = true
+
+[lints.rust]
+# Allow unsafe code for Send/Sync trait implementations on database connection wrapper
+unsafe_code = "allow"
+unused_variables = "deny"
+unused_imports = "deny"
+dead_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+complexity = "deny"
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+non_ascii_literal = "deny"
+

@@ -1,0 +1,22 @@
+pub mod auto_linker;
+pub mod embedding;
+pub mod gravity;
+pub mod insights;
+pub mod issue_matcher;
+pub mod issue_sync;
+pub mod rules;
+pub mod time_analyzer;
+
+pub use auto_linker::{AutoLinker, LinkReason, LinkSuggestion};
+pub use embedding::EmbeddingService;
+pub use gravity::{GravityCalculator, RelevanceStatus};
+pub use insights::InsightsGenerator;
+pub use issue_matcher::{
+    ActivitySignals, CandidateIssue, IssueMatch, IssueMatcher, MatchReason, SmartIssueMatcher,
+};
+pub use issue_sync::{IssueSyncService, SyncStats};
+pub use rules::RuleEngine;
+pub use time_analyzer::{
+    ActivitySegment, DailySummaryReport, SuggestedIssue, SuggestedTimeBlock, TimeAnalyzer,
+    WorkPattern,
+};

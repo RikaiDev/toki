@@ -1,0 +1,65 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/toki-core",
+    "crates/toki-storage",
+    "crates/toki-ai",
+    "crates/toki-cli",
+    "crates/toki-detector",
+    "crates/toki-integrations",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["RikaiDev"]
+license = "MIT"
+
+[workspace.dependencies]
+# Core dependencies
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1"
+thiserror = "1.0"
+log = "0.4"
+env_logger = "0.10"
+
+# Data storage
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# AI engine (reference kaido-ai architecture)
+reqwest = { version = "0.11", features = ["json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+tabled = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+
+# Configuration
+toml = "0.8"
+dirs = "5.0"
+
+# Utilities
+regex = "1.10"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+async-trait = "0.1"
+git2 = "0.18"
+walkdir = "2.4"
+
+# Workspace lints - strict quality control
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_variables = "deny"
+unused_imports = "deny"
+dead_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+complexity = "deny"
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+
+
+

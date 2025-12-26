@@ -1,0 +1,38 @@
+[package]
+name = "toki-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "toki"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4.5", features = ["derive"] }
+chrono = "0.4"
+tabled = "0.15"
+env_logger = "0.11"
+log = "0.4"
+toki-core = { path = "../toki-core" }
+toki-storage = { path = "../toki-storage" }
+toki-ai = { path = "../toki-ai" }
+toki-integrations = { path = "../toki-integrations" }
+serde_json = "1.0"
+sysinfo = "0.30"
+
+[lints.rust]
+unsafe_code = "forbid"
+unused_variables = "deny"
+unused_imports = "deny"
+dead_code = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+complexity = "deny"
+cognitive_complexity = "deny"
+too_many_arguments = "deny"
+non_ascii_literal = "deny"
+
