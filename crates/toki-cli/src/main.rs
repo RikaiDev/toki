@@ -92,6 +92,11 @@ enum Commands {
         #[command(subcommand)]
         action: PlaneAction,
     },
+    /// Notion integration commands
+    Notion {
+        #[command(subcommand)]
+        action: NotionAction,
+    },
     /// Review and confirm daily activity for syncing
     Review {
         /// Date to review (YYYY-MM-DD format, defaults to today)
@@ -127,14 +132,17 @@ enum Commands {
 enum ProjectAction {
     /// List all tracked projects
     List,
-    /// Link a local project to a Plane.so project
+    /// Link a local project to a PM system (Plane or Notion)
     Link {
         /// Local project name
         #[arg(short, long)]
         project: String,
         /// Plane project identifier (e.g., "HYGIE")
         #[arg(long)]
-        plane_project: String,
+        plane_project: Option<String>,
+        /// Notion database ID
+        #[arg(long)]
+        notion_database: Option<String>,
     },
     /// Unlink a project from PM system
     Unlink {
@@ -240,6 +248,23 @@ enum PlaneAction {
     MyIssues,
     /// Test API connection
     Test,
+}
+
+#[derive(Subcommand, Debug)]
+enum NotionAction {
+    /// Test API connection
+    Test,
+    /// List accessible databases
+    Databases,
+    /// List pages in a database
+    Pages {
+        /// Database ID
+        #[arg(short, long)]
+        database: String,
+        /// Show detailed schema information
+        #[arg(short, long)]
+        schema: bool,
+    },
 }
 
 #[derive(Tabled)]
@@ -623,7 +648,7 @@ async fn main() -> Result<()> {
                     println!("Configuration:");
                     println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
 
-                    // List integration configs
+                    // List Plane integration config
                     if let Ok(Some(config)) = db.get_integration_config("plane") {
                         println!("\n[plane]");
                         println!("  api_url = {}", config.api_url);
@@ -633,6 +658,24 @@ async fn main() -> Result<()> {
                         );
                         if let Some(ws) = config.workspace_slug {
                             println!("  workspace = {ws}");
+                        }
+                    }
+
+                    // List Notion integration config
+                    if let Ok(Some(config)) = db.get_integration_config("notion") {
+                        println!("\n[notion]");
+                        if !config.api_key.is_empty() {
+                            println!(
+                                "  api_key = {}***",
+                                &config.api_key.chars().take(8).collect::<String>()
+                            );
+                        }
+                        if let Some(db_id) = &config.project_id {
+                            println!("  database_id = {db_id}");
+                        }
+                        // time_property is stored in workspace_slug for Notion
+                        if let Some(tp) = &config.workspace_slug {
+                            println!("  time_property = {tp}");
                         }
                     }
 
@@ -660,6 +703,7 @@ async fn main() -> Result<()> {
         Commands::Learn { action } => handle_learn_command(action),
         Commands::IssueSync { force } => handle_issue_sync_command(force).await,
         Commands::Project { action } => handle_project_command(action).await,
+        Commands::Notion { action } => handle_notion_command(action).await,
     }
 }
 
@@ -865,13 +909,15 @@ fn get_config_value(db: &Database, key: &str) -> Result<Option<String>> {
     let field = parts[1];
 
     match section {
-        "plane" | "github" | "jira" => {
+        "plane" | "github" | "jira" | "notion" => {
             if let Some(config) = db.get_integration_config(section)? {
                 let value = match field {
                     "api_url" => Some(config.api_url),
                     "api_key" => Some(config.api_key),
-                    "workspace" | "workspace_slug" => config.workspace_slug,
-                    "project" | "project_id" => config.project_id,
+                    "workspace" | "workspace_slug" => config.workspace_slug.clone(),
+                    "project" | "project_id" | "database_id" => config.project_id.clone(),
+                    // For Notion, time_property is stored in workspace_slug field
+                    "time_property" if section == "notion" => config.workspace_slug.clone(),
                     _ => None,
                 };
                 Ok(value)
@@ -894,7 +940,7 @@ fn get_config_value(db: &Database, key: &str) -> Result<Option<String>> {
             Ok(value)
         }
         _ => anyhow::bail!(
-            "Unknown section: {section}. Valid sections: plane, github, jira, settings"
+            "Unknown section: {section}. Valid sections: plane, github, jira, notion, settings"
         ),
     }
 }
@@ -930,6 +976,24 @@ fn set_config_value(db: &Database, key: &str, value: &str) -> Result<()> {
             config.updated_at = chrono::Utc::now();
             db.upsert_integration_config(&config)?;
         }
+        "notion" => {
+            let mut config = db.get_integration_config(section)?.unwrap_or_else(|| {
+                IntegrationConfig::new(section.to_string(), String::new(), String::new())
+            });
+
+            match field {
+                "api_key" => config.api_key = value.to_string(),
+                "database_id" => config.project_id = Some(value.to_string()),
+                // Store time_property in workspace_slug field (reused for Notion)
+                "time_property" => config.workspace_slug = Some(value.to_string()),
+                _ => anyhow::bail!(
+                    "Unknown field: {field}. Valid fields: api_key, database_id, time_property"
+                ),
+            }
+
+            config.updated_at = chrono::Utc::now();
+            db.upsert_integration_config(&config)?;
+        }
         "settings" => {
             let mut settings = db.get_settings()?;
 
@@ -950,7 +1014,7 @@ fn set_config_value(db: &Database, key: &str, value: &str) -> Result<()> {
 
             db.update_settings(&settings)?;
         }
-        _ => anyhow::bail!("Unknown section: {section}"),
+        _ => anyhow::bail!("Unknown section: {section}. Valid sections: plane, github, jira, notion, settings"),
     }
 
     Ok(())
@@ -1532,45 +1596,73 @@ fn handle_learn_command(action: LearnAction) -> Result<()> {
 
 async fn handle_issue_sync_command(force: bool) -> Result<()> {
     use toki_ai::IssueSyncService;
-    use toki_integrations::plane::PlaneClient;
+    use toki_integrations::{NotionClient, PlaneClient};
 
     let db = Arc::new(Database::new(None)?);
-
-    // Get Plane configuration
-    let config = db.get_integration_config("plane")?;
-    let config = if let Some(c) = config { c } else {
-        println!("Plane.so is not configured.");
-        println!("Run 'toki config set plane.api_key <your-api-key>' first.");
-        return Ok(());
-    };
-
-    let workspace_slug = config.workspace_slug.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("Plane workspace not configured. Run 'toki config set plane.workspace <slug>'")
-    })?;
 
     // Check if we have any linked projects
     let linked_projects = db.get_projects_with_pm_link()?;
     if linked_projects.is_empty() {
-        println!("No projects linked to Plane.so.");
-        println!("Link a project first: toki project link --project <name> --plane-project <IDENTIFIER>");
+        println!("No projects linked to any PM system.");
+        println!("\nLink a project first:");
+        println!("  toki project link --project <name> --plane-project <IDENTIFIER>");
+        println!("  toki project link --project <name> --notion-database <ID>");
         return Ok(());
     }
 
-    println!("Syncing issues from Plane.so...");
-    println!("  Workspace: {workspace_slug}");
-    println!("  Linked projects: {}", linked_projects.len());
+    // Count projects by PM system
+    let plane_count = linked_projects.iter().filter(|p| p.pm_system.as_deref() == Some("plane")).count();
+    let notion_count = linked_projects.iter().filter(|p| p.pm_system.as_deref() == Some("notion")).count();
 
-    let plane_client = PlaneClient::new(
-        config.api_key.clone(),
-        workspace_slug.clone(),
-        Some(config.api_url.clone()),
-    )?;
+    println!("Syncing issues from PM systems...");
+    println!("  Linked projects: {} (Plane: {}, Notion: {})", linked_projects.len(), plane_count, notion_count);
+
+    // Initialize clients based on what's configured and needed
+    let plane_client = if plane_count > 0 {
+        if let Some(config) = db.get_integration_config("plane")? {
+            if let Some(workspace_slug) = &config.workspace_slug {
+                println!("  Plane workspace: {workspace_slug}");
+                Some(PlaneClient::new(
+                    config.api_key.clone(),
+                    workspace_slug.clone(),
+                    Some(config.api_url.clone()),
+                )?)
+            } else {
+                println!("  Warning: Plane workspace not configured");
+                None
+            }
+        } else {
+            println!("  Warning: Plane not configured");
+            None
+        }
+    } else {
+        None
+    };
+
+    let notion_client = if notion_count > 0 {
+        if let Some(config) = db.get_integration_config("notion")? {
+            if !config.api_key.is_empty() {
+                println!("  Notion: configured");
+                Some(NotionClient::new(config.api_key.clone())?)
+            } else {
+                println!("  Warning: Notion API key not set");
+                None
+            }
+        } else {
+            println!("  Warning: Notion not configured");
+            None
+        }
+    } else {
+        None
+    };
 
     // Create sync service
     let sync_service = IssueSyncService::new(db.clone())?;
 
-    // Sync all linked projects
-    let stats = sync_service.sync_all_linked_projects(&plane_client).await?;
+    // Sync all linked projects (both Plane and Notion)
+    let stats = sync_service
+        .sync_all_linked_projects_multi(plane_client.as_ref(), notion_client.as_ref())
+        .await?;
 
     println!("\nSync complete:");
     println!("  Issues synced: {}", stats.issues_synced);
@@ -1638,7 +1730,7 @@ async fn handle_project_command(action: ProjectAction) -> Result<()> {
             println!("\nTo link a project: toki project link --project <name> --plane-project <IDENTIFIER>");
         }
 
-        ProjectAction::Link { project, plane_project } => {
+        ProjectAction::Link { project, plane_project, notion_database } => {
             // Find local project by name
             let local_project = db.get_project_by_name(&project)?;
             let local_project = if let Some(p) = local_project { p } else {
@@ -1647,49 +1739,107 @@ async fn handle_project_command(action: ProjectAction) -> Result<()> {
                 return Ok(());
             };
 
-            // Get Plane configuration
-            let config = db.get_integration_config("plane")?;
-            let config = if let Some(c) = config { c } else {
-                println!("Plane.so is not configured.");
-                println!("Run 'toki config set plane.api_key <your-api-key>' first.");
-                return Ok(());
-            };
+            // Determine which PM system to link
+            match (plane_project, notion_database) {
+                (Some(plane_id), None) => {
+                    // Link to Plane.so
+                    let config = db.get_integration_config("plane")?;
+                    let config = if let Some(c) = config { c } else {
+                        println!("Plane.so is not configured.");
+                        println!("Run 'toki config set plane.api_key <your-api-key>' first.");
+                        return Ok(());
+                    };
 
-            let workspace_slug = config.workspace_slug.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("Plane workspace not configured")
-            })?;
+                    let workspace_slug = config.workspace_slug.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("Plane workspace not configured")
+                    })?;
 
-            // Verify Plane project exists
-            let plane_client = PlaneClient::new(
-                config.api_key.clone(),
-                workspace_slug.clone(),
-                Some(config.api_url.clone()),
-            )?;
+                    // Verify Plane project exists
+                    let plane_client = PlaneClient::new(
+                        config.api_key.clone(),
+                        workspace_slug.clone(),
+                        Some(config.api_url.clone()),
+                    )?;
 
-            let plane_projects = plane_client.list_projects().await?;
-            let matching_project = plane_projects
-                .iter()
-                .find(|p| p.identifier.to_uppercase() == plane_project.to_uppercase());
+                    let plane_projects = plane_client.list_projects().await?;
+                    let matching_project = plane_projects
+                        .iter()
+                        .find(|p| p.identifier.to_uppercase() == plane_id.to_uppercase());
 
-            let plane_proj = if let Some(p) = matching_project { p } else {
-                println!("Plane project not found: {plane_project}");
-                println!("\nAvailable projects:");
-                for p in &plane_projects {
-                    println!("  {} - {}", p.identifier, p.name);
+                    let plane_proj = if let Some(p) = matching_project { p } else {
+                        println!("Plane project not found: {plane_id}");
+                        println!("\nAvailable projects:");
+                        for p in &plane_projects {
+                            println!("  {} - {}", p.identifier, p.name);
+                        }
+                        return Ok(());
+                    };
+
+                    // Link the project
+                    db.link_project_to_pm(
+                        local_project.id,
+                        "plane",
+                        &plane_proj.id.to_string(),
+                        Some(workspace_slug),
+                    )?;
+
+                    println!("Linked '{project}' -> Plane project '{}'", plane_proj.identifier);
+                    println!("\nNow run 'toki issue-sync' to fetch issues for AI matching.");
                 }
-                return Ok(());
-            };
+                (None, Some(db_id)) => {
+                    // Link to Notion database
+                    use toki_integrations::NotionClient;
 
-            // Link the project
-            db.link_project_to_pm(
-                local_project.id,
-                "plane",
-                &plane_proj.id.to_string(),
-                Some(workspace_slug),
-            )?;
+                    let config = db.get_integration_config("notion")?;
+                    let config = if let Some(c) = config { c } else {
+                        println!("Notion is not configured.");
+                        println!("Run 'toki config set notion.api_key <your-integration-token>' first.");
+                        return Ok(());
+                    };
 
-            println!("Linked '{project}' -> Plane project '{}'", plane_proj.identifier);
-            println!("\nNow run 'toki issue-sync' to fetch issues for AI matching.");
+                    let notion_client = NotionClient::new(config.api_key.clone())?;
+
+                    // Verify database exists and is accessible
+                    let notion_db = match notion_client.get_database(&db_id).await {
+                        Ok(d) => d,
+                        Err(e) => {
+                            println!("Failed to access Notion database: {e}");
+                            println!("\nMake sure:");
+                            println!("  1. The database ID is correct");
+                            println!("  2. Your integration has access to the database");
+                            println!("     (Open database -> ... menu -> Add connections)");
+                            return Ok(());
+                        }
+                    };
+
+                    let db_title = notion_db
+                        .title
+                        .first()
+                        .map(|t| t.plain_text.as_str())
+                        .unwrap_or("Untitled");
+
+                    // Link the project
+                    db.link_project_to_pm(
+                        local_project.id,
+                        "notion",
+                        &db_id,
+                        None,
+                    )?;
+
+                    println!("Linked '{project}' -> Notion database '{db_title}'");
+                    println!("\nNow run 'toki issue-sync' to fetch issues for AI matching.");
+                }
+                (Some(_), Some(_)) => {
+                    println!("Error: Cannot specify both --plane-project and --notion-database.");
+                    println!("Choose one PM system to link.");
+                }
+                (None, None) => {
+                    println!("Error: Please specify either --plane-project or --notion-database.");
+                    println!("\nExamples:");
+                    println!("  toki project link --project myapp --plane-project PROJ");
+                    println!("  toki project link --project myapp --notion-database abc123...");
+                }
+            }
         }
 
         ProjectAction::Unlink { project } => {
@@ -1788,6 +1938,183 @@ async fn handle_project_command(action: ProjectAction) -> Result<()> {
             } else if !applicable.is_empty() {
                 println!("\nTo apply these links, run:");
                 println!("  toki project auto-link --apply");
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Notion Command
+// ============================================================================
+
+async fn handle_notion_command(action: NotionAction) -> Result<()> {
+    use toki_integrations::{NotionClient, ProjectManagementSystem};
+
+    let db = Database::new(None)?;
+
+    // Get Notion configuration
+    let config = db.get_integration_config("notion")?;
+    let config = if let Some(c) = config {
+        c
+    } else {
+        println!("Notion is not configured.");
+        println!("Run 'toki config set notion.api_key <your-integration-token>' first.");
+        println!("\nTo get a Notion integration token:");
+        println!("  1. Go to https://www.notion.so/my-integrations");
+        println!("  2. Create a new integration");
+        println!("  3. Copy the Internal Integration Token");
+        return Ok(());
+    };
+
+    let client = NotionClient::new(config.api_key.clone())?;
+
+    match action {
+        NotionAction::Test => {
+            println!("Testing Notion API connection...");
+            match client.validate_credentials().await {
+                Ok(true) => {
+                    println!("Connection successful!");
+                    // Also show accessible databases count
+                    match client.list_databases().await {
+                        Ok(databases) => {
+                            println!("  Accessible databases: {}", databases.len());
+                        }
+                        Err(e) => {
+                            println!("  (Could not list databases: {e})");
+                        }
+                    }
+                }
+                Ok(false) => println!("Connection failed: Invalid credentials"),
+                Err(e) => println!("Connection failed: {e}"),
+            }
+        }
+        NotionAction::Databases => {
+            println!("Fetching accessible Notion databases...\n");
+            let databases = client.list_databases().await?;
+
+            if databases.is_empty() {
+                println!("No databases found.");
+                println!("\nMake sure you've:");
+                println!("  1. Created an integration at https://www.notion.so/my-integrations");
+                println!("  2. Connected the integration to your database(s)");
+                println!("     (Open database -> ... menu -> Add connections -> Your integration)");
+                return Ok(());
+            }
+
+            println!("{:<36} {:<40} PROPERTIES", "ID", "TITLE");
+            println!("{}", "-".repeat(90));
+            for db_item in &databases {
+                let title = db_item
+                    .title
+                    .first()
+                    .map(|t| t.plain_text.as_str())
+                    .unwrap_or("Untitled");
+                let prop_count = db_item.properties.len();
+                println!(
+                    "{:<36} {:<40} {} props",
+                    db_item.id,
+                    truncate_str(title, 38),
+                    prop_count
+                );
+            }
+
+            println!("\nTo link a project to a Notion database:");
+            println!("  toki project link --project <name> --notion-database <ID>");
+        }
+        NotionAction::Pages { database, schema } => {
+            if schema {
+                // Show database schema
+                println!("Fetching database schema...\n");
+                let db_info = client.get_database(&database).await?;
+
+                let title = db_info
+                    .title
+                    .first()
+                    .map(|t| t.plain_text.as_str())
+                    .unwrap_or("Untitled");
+                println!("Database: {title}");
+                println!("ID: {}", db_info.id);
+                println!("\nProperties ({}):", db_info.properties.len());
+                println!("{:<30} {:<15} DETECTED AS", "NAME", "TYPE");
+                println!("{}", "-".repeat(60));
+
+                // Detect property mapping
+                let mapping = db_info.detect_property_mapping(None);
+
+                for (name, schema) in &db_info.properties {
+                    let detected = if mapping.title.as_ref() == Some(name) {
+                        "-> title"
+                    } else if mapping.status.as_ref() == Some(name) {
+                        "-> status"
+                    } else if mapping.description.as_ref() == Some(name) {
+                        "-> description"
+                    } else if mapping.time.as_ref() == Some(name) {
+                        "-> time"
+                    } else if mapping.priority.as_ref() == Some(name) {
+                        "-> priority"
+                    } else if mapping.assignee.as_ref() == Some(name) {
+                        "-> assignee"
+                    } else if mapping.due_date.as_ref() == Some(name) {
+                        "-> due_date"
+                    } else {
+                        ""
+                    };
+                    println!("{:<30} {:<15} {}", name, &schema.property_type, detected);
+                }
+
+                println!("\nDetected mapping:");
+                println!("  Title: {:?}", mapping.title);
+                println!("  Status: {:?}", mapping.status);
+                println!("  Description: {:?}", mapping.description);
+                println!("  Time: {:?}", mapping.time);
+            } else {
+                // List pages
+                println!("Fetching pages from database...\n");
+                let pages = client.query_database_all(&database).await?;
+
+                if pages.is_empty() {
+                    println!("No pages found in this database.");
+                    return Ok(());
+                }
+
+                // Get database info for property mapping
+                let db_info = client.get_database(&database).await?;
+                let mapping = db_info.detect_property_mapping(None);
+
+                println!("{:<15} {:<50} STATUS", "ID", "TITLE");
+                println!("{}", "-".repeat(80));
+
+                for page in &pages {
+                    // Extract external_id
+                    let external_id = NotionClient::generate_external_id(&database, &page.id);
+
+                    // Extract title using the as_plain_text method
+                    let title = mapping
+                        .title
+                        .as_ref()
+                        .and_then(|prop_name| page.properties.get(prop_name))
+                        .and_then(|v| v.as_plain_text())
+                        .unwrap_or_else(|| "Untitled".to_string());
+
+                    // Extract status using the as_select_name method
+                    let status = mapping
+                        .status
+                        .as_ref()
+                        .and_then(|prop_name| page.properties.get(prop_name))
+                        .and_then(|v| v.as_select_name())
+                        .unwrap_or_else(|| "-".to_string());
+
+                    println!(
+                        "{:<15} {:<50} {}",
+                        external_id,
+                        truncate_str(&title, 48),
+                        status
+                    );
+                }
+
+                println!("\nTotal: {} pages", pages.len());
             }
         }
     }

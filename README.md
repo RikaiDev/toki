@@ -41,6 +41,7 @@ No buttons to click. No timers to start. Just work.
 
 ### PM System Integration
 - **Plane.so** - Sync time entries to your project management system
+- **Notion** - Use Notion databases as issue sources with time tracking
 - **More coming** - GitHub, Jira, Linear (planned)
 
 ---
@@ -89,13 +90,58 @@ toki config set plane.api_key <your-api-key>
 toki config set plane.workspace <workspace-slug>
 
 # Link a local project to a Plane project
-toki project link <local-project> <plane-project-id>
+toki project link --project <local-project> --plane-project <IDENTIFIER>
 
 # Sync issues for AI matching
 toki issue-sync
 
 # Sync time entries
 toki sync plane
+```
+
+### Notion Integration
+
+Toki can use Notion databases as issue sources with automatic time tracking support.
+
+```bash
+# 1. Create a Notion Integration
+#    Go to https://www.notion.so/my-integrations
+#    Create a new integration and copy the token
+
+# 2. Configure API access
+toki config set notion.api_key <your-integration-token>
+
+# 3. Connect your database to the integration
+#    In Notion: Open database → ... menu → Add connections → Your integration
+
+# 4. Test connection and list databases
+toki notion test
+toki notion databases
+
+# 5. View database schema (shows detected property mappings)
+toki notion pages --database <database-id> --schema
+
+# 6. Link a local project to a Notion database
+toki project link --project <local-project> --notion-database <database-id>
+
+# 7. Sync issues for AI matching
+toki issue-sync
+```
+
+#### Automatic Property Detection
+
+Toki automatically detects property mappings from your Notion database:
+
+| Role | Detected Property Names |
+|------|-------------------------|
+| Title | Name, Title, Task, 名稱, タイトル |
+| Status | Status, State, 狀態, ステータス |
+| Description | Description, Notes, 描述, 説明 |
+| Time | Time, Hours, Duration, 時間, 工時 |
+
+You can override automatic detection:
+```bash
+toki config set notion.time_property "Hours Spent"
 ```
 
 ---
@@ -110,7 +156,7 @@ toki/
 │   ├── toki-storage/       # SQLite database, models, migrations
 │   ├── toki-ai/            # Semantic gravity, embeddings, issue matching
 │   ├── toki-detector/      # Git parsing, IDE workspace detection
-│   └── toki-integrations/  # Plane.so API, webhooks
+│   └── toki-integrations/  # Plane.so, Notion APIs, webhooks
 └── contrib/
     ├── toki.plist          # macOS launchd service
     └── toki.service        # Linux systemd service
@@ -187,6 +233,7 @@ TOKI_DB_PATH=...    # Custom database path
 - [x] Plane.so integration
 - [x] AI semantic gravity classification
 - [x] Local embedding-based issue matching
+- [x] Notion database integration
 - [ ] GitHub Issues integration
 - [ ] Jira integration
 - [ ] Linear integration

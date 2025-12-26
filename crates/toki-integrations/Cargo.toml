@@ -22,6 +22,9 @@ tokio = { workspace = true, features = ["macros"] }
 # Webhook signature verification
 hmac-sha256 = "1.1"
 
+# Async recursion for Notion block fetching
+async-recursion = "1.0"
+
 [lints.rust]
 unsafe_code = "forbid"
 unused_variables = "deny"

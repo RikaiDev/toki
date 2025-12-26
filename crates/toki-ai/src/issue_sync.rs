@@ -1,6 +1,6 @@
 //! Issue synchronization service for AI matching
 //!
-//! Syncs issues from PM systems (like Plane.so) to local database
+//! Syncs issues from PM systems (Plane.so, Notion) to local database
 //! and computes embeddings for semantic matching.
 
 use anyhow::Result;
@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 use toki_integrations::plane::PlaneClient;
+use toki_integrations::notion::{NotionClient, PropertyMappingConfig};
 use toki_storage::db::Database;
 use toki_storage::models::{IssueCandidate, Project};
 
@@ -194,14 +195,113 @@ impl IssueSyncService {
         Ok(stats)
     }
 
-    /// Sync all projects that have PM links
+    /// Sync issues from Notion for a specific project
+    ///
+    /// # Arguments
+    /// * `notion_client` - Notion API client
+    /// * `local_project` - Local project with Notion database linked
+    /// * `config` - Optional property mapping configuration
+    /// * `fetch_blocks` - Whether to fetch page blocks for descriptions
     ///
     /// # Errors
     ///
     /// Returns an error if API calls fail or database operations fail
-    pub async fn sync_all_linked_projects(
+    pub async fn sync_notion_project_issues(
         &self,
-        plane_client: &PlaneClient,
+        notion_client: &NotionClient,
+        local_project: &Project,
+        config: Option<&PropertyMappingConfig>,
+        fetch_blocks: bool,
+    ) -> Result<SyncStats> {
+        let mut stats = SyncStats::default();
+
+        // Get the database ID from local project
+        let database_id = if let Some(id) = &local_project.pm_project_id {
+            id.clone()
+        } else {
+            stats.errors.push(format!(
+                "Project '{}' has no Notion database ID linked",
+                local_project.name
+            ));
+            return Ok(stats);
+        };
+
+        log::info!(
+            "Syncing issues from Notion database {} for local project '{}'",
+            database_id,
+            local_project.name
+        );
+
+        // Fetch all pages as issue candidates
+        let candidates = notion_client
+            .fetch_database_as_issues(&database_id, config, fetch_blocks)
+            .await?;
+
+        log::info!("Fetched {} pages from Notion", candidates.len());
+
+        // Process each candidate
+        for candidate_data in &candidates {
+            // Check if we need to update or insert
+            let existing = self
+                .database
+                .get_issue_candidate(&candidate_data.external_id, "notion")?;
+
+            let needs_embedding = existing.as_ref().is_none_or(|e| e.embedding.is_none());
+
+            // Create IssueCandidate
+            let mut candidate = IssueCandidate::new(
+                local_project.id,
+                candidate_data.external_id.clone(),
+                candidate_data.external_system.clone(),
+                candidate_data.title.clone(),
+            );
+            candidate.pm_project_id = Some(database_id.clone());
+            candidate.description = candidate_data.description.clone();
+            candidate.status = candidate_data.status.clone();
+            candidate.labels = candidate_data.labels.clone();
+
+            // Preserve existing ID if updating
+            if let Some(existing_candidate) = &existing {
+                candidate.id = existing_candidate.id;
+                stats.issues_updated += 1;
+            } else {
+                stats.issues_synced += 1;
+            }
+
+            // Upsert to database
+            self.database.upsert_issue_candidate(&candidate)?;
+
+            // Compute embedding if needed
+            if needs_embedding {
+                match self.compute_and_store_embedding(&candidate) {
+                    Ok(()) => stats.embeddings_computed += 1,
+                    Err(e) => {
+                        stats.errors.push(format!(
+                            "Failed to compute embedding for {}: {e}",
+                            candidate.external_id
+                        ));
+                    }
+                }
+            }
+        }
+
+        log::info!("Notion issue sync complete: {stats}");
+        Ok(stats)
+    }
+
+    /// Sync all projects that have PM links (Plane or Notion)
+    ///
+    /// # Arguments
+    /// * `plane_client` - Optional Plane.so client
+    /// * `notion_client` - Optional Notion client
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if API calls fail or database operations fail
+    pub async fn sync_all_linked_projects_multi(
+        &self,
+        plane_client: Option<&PlaneClient>,
+        notion_client: Option<&NotionClient>,
     ) -> Result<SyncStats> {
         let mut total_stats = SyncStats::default();
 
@@ -215,16 +315,41 @@ impl IssueSyncService {
         log::info!("Syncing {} linked projects", linked_projects.len());
 
         for project in &linked_projects {
-            if project.pm_system.as_deref() != Some("plane") {
-                log::debug!(
-                    "Skipping project '{}': PM system is {:?}",
-                    project.name,
-                    project.pm_system
-                );
-                continue;
-            }
+            let result = match project.pm_system.as_deref() {
+                Some("plane") => {
+                    if let Some(client) = plane_client {
+                        self.sync_project_issues(client, project).await
+                    } else {
+                        log::debug!(
+                            "Skipping Plane project '{}': no Plane client provided",
+                            project.name
+                        );
+                        continue;
+                    }
+                }
+                Some("notion") => {
+                    if let Some(client) = notion_client {
+                        self.sync_notion_project_issues(client, project, None, false)
+                            .await
+                    } else {
+                        log::debug!(
+                            "Skipping Notion project '{}': no Notion client provided",
+                            project.name
+                        );
+                        continue;
+                    }
+                }
+                other => {
+                    log::debug!(
+                        "Skipping project '{}': unsupported PM system {:?}",
+                        project.name,
+                        other
+                    );
+                    continue;
+                }
+            };
 
-            match self.sync_project_issues(plane_client, project).await {
+            match result {
                 Ok(stats) => {
                     total_stats.issues_synced += stats.issues_synced;
                     total_stats.issues_updated += stats.issues_updated;
@@ -241,6 +366,19 @@ impl IssueSyncService {
         }
 
         Ok(total_stats)
+    }
+
+    /// Sync all projects that have PM links (Plane only - for backwards compatibility)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if API calls fail or database operations fail
+    pub async fn sync_all_linked_projects(
+        &self,
+        plane_client: &PlaneClient,
+    ) -> Result<SyncStats> {
+        self.sync_all_linked_projects_multi(Some(plane_client), None)
+            .await
     }
 
     /// Compute embedding for an issue and store it
