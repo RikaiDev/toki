@@ -1,244 +1,225 @@
-# Toki - Active Time Tracking for Software Engineers
+# Toki
 
-Accurate, intelligent time tracking tool designed for software engineers.
+**Automatic time tracking for developers** - Track your work without thinking about it.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+
+---
+
+## The Problem
+
+Time tracking is tedious. You forget to start timers, forget to stop them, and end up guessing at the end of the day. Traditional tools require constant manual input, breaking your flow.
+
+## The Solution
+
+Toki runs silently in the background, automatically detecting:
+- Which project you're working on (from IDE window titles)
+- Which issue you're addressing (from git branch names)
+- How you spend your time (AI-powered activity classification)
+
+No buttons to click. No timers to start. Just work.
+
+---
 
 ## Features
 
-### Phase 5 - Precise Time Tracking (Completed)
+### Quiet Technology
+- **Zero-friction tracking** - Runs as a background daemon
+- **Automatic project detection** - Parses IDE window titles (VS Code, Cursor, etc.)
+- **Git branch to issue linking** - Extracts issue IDs from branch names (e.g., `feature/PROJ-123`)
 
-- **1-Second Precision**: Poll every second, accurately record each activity span
-- **Smart Session Management**: Auto-detect work session start/end
-- **ActivitySpan Model**: Accurately record duration for each app/task
-- **Unix Socket IPC**: Real-time CLI-daemon communication
-- **Daemon Management**: Complete control with start/stop/status/logs
-- **System Integration**: Support for launchd (macOS) / systemd (Linux)
-- **Graceful Shutdown**: SIGTERM/SIGINT signal handling
+### AI-Powered Classification
+- **Semantic Gravity** - Uses local embeddings to classify activities by relevance
+- **Smart issue matching** - Suggests related issues based on your work context
+- **No explicit rules needed** - AI learns from patterns, not configurations
 
-### Core Features
+### Privacy-First
+- **100% local** - All data stored in SQLite on your machine
+- **No cloud sync** - Unless you explicitly configure it
+- **App exclusion** - Hide sensitive applications from tracking
 
-- **Automatic Tracking**: Monitor applications and window titles
-- **Smart Classification**: Automatically categorize activities (work, meetings, breaks, etc.)
-- **Work Item Binding**: Support for Plane.so, GitHub, Jira work item tracking
-- **Privacy Protection**: Exclude sensitive apps, pause tracking
-- **Report Generation**: Daily/weekly/monthly time statistics
-- **PM System Sync**: Automatically sync work hours to project management systems
+### PM System Integration
+- **Plane.so** - Sync time entries to your project management system
+- **More coming** - GitHub, Jira, Linear (planned)
+
+---
 
 ## Quick Start
 
 ### Installation
 
 ```bash
-# Build
+# Build from source
 cargo build --release
 
-# Install
+# Install binary
 sudo cp target/release/toki /usr/local/bin/
 
-# Initialize
+# Initialize configuration
 toki init
 ```
 
-For detailed installation instructions, see [INSTALL.md](INSTALL.md)
+See [INSTALL.md](INSTALL.md) for detailed instructions including system service setup.
 
-### Basic Usage
+### Usage
 
 ```bash
-# Start daemon
+# Start the daemon
 toki start
 
-# Check status
+# Check what's being tracked
 toki status
 
-# Track specific work item
-toki work-on PROJ-123
-
-# Stop tracking
-toki work-off
-
-# View reports
+# View today's activity
 toki report today
-toki report week
 
-# Sync to Plane.so
-toki sync plane
+# Review and link activities to issues
+toki review
 
-# Stop daemon
+# Stop the daemon
 toki stop
 ```
 
+### Plane.so Integration
+
+```bash
+# Configure API access
+toki config set plane.api_key <your-api-key>
+toki config set plane.workspace <workspace-slug>
+
+# Link a local project to a Plane project
+toki project link <local-project> <plane-project-id>
+
+# Sync issues for AI matching
+toki issue-sync
+
+# Sync time entries
+toki sync plane
+```
+
+---
+
 ## Architecture
 
-### Time Tracking Precision
-
-```text
-Polling Interval: 1 second
-Recording Unit: ActivitySpan (accurate to the second)
-Session Management: Auto-detect work periods
-Idle Detection: Configurable idle threshold
 ```
-
-### Data Model
-
-```text
-Session (Work Period)
-  ├── ActivitySpan (Activity Fragment, 1-second precision)
-  │     ├── app_name
-  │     ├── category
-  │     ├── start_time
-  │     ├── duration_seconds
-  │     └── work_item_id (optional)
-  └── WorkItem (Work Item)
-        ├── issue_id (PROJ-123)
-        ├── project
-        └── accumulated_time
-```
-
-### Daemon Architecture
-
-```text
-CLI <─IPC Socket─> Daemon
-                     │
-                     ├── SessionManager (Session lifecycle)
-                     ├── SystemMonitor (App monitoring)
-                     ├── Classifier (Smart categorization)
-                     ├── WorkContextDetector (Work item detection)
-                     └── Database (SQLite)
-```
-
-## Project Structure
-
-```text
 toki/
 ├── crates/
-│   ├── toki-core/          # Core daemon logic
-│   │   ├── daemon.rs        # Main daemon (1-second polling)
-│   │   ├── session_manager.rs  # Session lifecycle management
-│   │   ├── ipc.rs           # Unix socket IPC
-│   │   └── daemon_control.rs  # PID management, daemonize
-│   ├── toki-storage/        # Data layer
-│   │   ├── db.rs            # SQLite operations
-│   │   ├── models.rs        # Data models
-│   │   └── migrations.rs    # Schema migrations
-│   ├── toki-ai/             # Smart analysis
-│   │   ├── classifier.rs    # Activity classification
-│   │   └── insights.rs      # Time analysis
-│   ├── toki-detector/       # Work item detection
-│   │   └── work_context.rs  # Detect work items from path/title
-│   ├── toki-integrations/   # PM system integration
-│   │   └── plane.rs         # Plane.so API
-│   └── toki-cli/            # Command-line interface
-│       └── main.rs          # CLI + IPC client
+│   ├── toki-cli/           # Command-line interface
+│   ├── toki-core/          # Daemon: polling, session management, IPC
+│   ├── toki-storage/       # SQLite database, models, migrations
+│   ├── toki-ai/            # Semantic gravity, embeddings, issue matching
+│   ├── toki-detector/      # Git parsing, IDE workspace detection
+│   └── toki-integrations/  # Plane.so API, webhooks
 └── contrib/
-    ├── toki.plist           # macOS launchd
-    └── toki.service         # Linux systemd
+    ├── toki.plist          # macOS launchd service
+    └── toki.service        # Linux systemd service
 ```
+
+### Data Flow
+
+```
+System Monitor (active app, window title)
+        │
+        v
+Work Context Detector (project path, git branch)
+        │
+        v
+AI Classifier (semantic gravity scoring)
+        │
+        v
+ActivitySpan → SQLite Database
+        │
+        v
+CLI queries via Unix Socket IPC
+```
+
+---
 
 ## Development
 
-### Build
-
 ```bash
+# Build
 cargo build
+
+# Run tests
 cargo test
+
+# Lint (strict - must pass with 0 errors/warnings)
 cargo clippy
+
+# Run daemon in foreground for debugging
+RUST_LOG=debug cargo run -- start --foreground --interval 1
 ```
 
-### Run Tests
+### Code Quality Standards
 
-```bash
-# Unit tests
-cargo test
+- `#![forbid(unsafe_code)]` in all crates except `toki-core` (platform APIs)
+- Zero warnings policy
+- Clippy pedantic mode enabled
 
-# Integration tests
-cargo test --test '*'
-
-# Foreground mode testing
-RUST_LOG=debug cargo run -- start --interval 1
-```
-
-### Code Quality
-
-- **0 errors, 0 warnings**: Strict linting rules
-- **No unsafe code**: `#![forbid(unsafe_code)]`
-- **Complete error handling**: Using `anyhow` and `thiserror`
-- **Structured logging**: `log` + `env_logger`
+---
 
 ## Configuration
 
-### Data Directory
+Data is stored in `~/.toki/`:
 
-- **macOS/Linux**: `~/.toki/`
-  - `toki.db` - SQLite database
-  - `toki.log` - Daemon logs
-  - `toki.sock` - IPC socket (when daemon is running)
-  - `encryption.key` - Encryption key (optional)
+| File | Description |
+|------|-------------|
+| `toki.db` | SQLite database |
+| `toki.log` | Daemon logs |
+| `toki.sock` | IPC socket (runtime) |
+| `config.toml` | User configuration |
 
 ### Environment Variables
 
 ```bash
-# Log level
-export RUST_LOG=info  # debug, info, warn, error
-
-# Database path (optional)
-export TOKI_DB_PATH=/custom/path/toki.db
+RUST_LOG=debug      # Log level: debug, info, warn, error
+TOKI_DB_PATH=...    # Custom database path
 ```
 
-## Privacy
+---
 
-- **Local First**: All data stored locally
-- **Optional Encryption**: Support database encryption
-- **App Exclusion**: Exclude sensitive applications
-- **Pause Tracking**: Pause/resume tracking at any time
-- **Data Export**: Support JSON/CSV export
+## Roadmap
 
-## Integrations
+- [x] Automatic project detection
+- [x] Git branch issue extraction
+- [x] Plane.so integration
+- [x] AI semantic gravity classification
+- [x] Local embedding-based issue matching
+- [ ] GitHub Issues integration
+- [ ] Jira integration
+- [ ] Linear integration
+- [ ] Web dashboard
+- [ ] Team sync (optional)
 
-### Plane.so
-
-```bash
-# Configure API
-toki config set plane.api_url https://api.plane.so
-toki config set plane.api_key your-api-key
-toki config set plane.workspace my-workspace
-
-# Sync work hours
-toki sync plane
-```
-
-### GitHub (Planned)
-
-```bash
-toki config set github.token ghp_xxx
-toki sync github
-```
-
-### Jira (Planned)
-
-```bash
-toki config set jira.url https://your-domain.atlassian.net
-toki config set jira.token xxx
-toki sync jira
-```
+---
 
 ## Contributing
 
-Issues and Pull Requests are welcome!
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
-### Development Workflow
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-1. Fork the project
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open Pull Request
+---
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details
+MIT License - see [LICENSE](LICENSE) for details.
 
-## Acknowledgments
+---
 
-- [Rust](https://www.rust-lang.org/) - Systems programming language
-- [SQLite](https://www.sqlite.org/) - Embedded database
-- [Tokio](https://tokio.rs/) - Async runtime
-- [Plane.so](https://plane.so/) - Project management platform
+## About RikaiDev
+
+**Rikai** (理解) means "understanding" in Japanese. We build tools that help developers understand their work through AI assistance.
+
+- [Cortex AI](https://github.com/RikaiDev/cortex-ai) - AI collaboration brain for coding assistants
+- [Toki](https://github.com/RikaiDev/toki) - Automatic time tracking
+
+---
+
+Built with Rust, SQLite, and local AI embeddings.
