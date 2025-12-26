@@ -14,6 +14,7 @@ use rmcp::{
 };
 use toki_ai::{NotionIssueSyncService, SyncOptions, SyncOutcome};
 use toki_ai::issue_matcher::{ActivitySignals, SmartIssueMatcher};
+use toki_ai::work_summary::{SummaryPeriod, WorkSummaryGenerator};
 use toki_detector::git::GitDetector;
 use toki_integrations::{GitHubClient, GitLabClient, NotionClient};
 use toki_storage::{Database, IntegrationConfig};
@@ -74,6 +75,17 @@ pub struct SuggestIssueRequest {
     pub path: String,
     #[schemars(description = "Maximum number of suggestions to return (default: 5)")]
     pub max_suggestions: Option<usize>,
+}
+
+/// Request for generating work summary
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GenerateSummaryRequest {
+    #[schemars(description = "Time period: today, yesterday, week, month")]
+    pub period: String,
+    #[schemars(description = "Output format: text, brief, json, markdown (default: text)")]
+    pub format: Option<String>,
+    #[schemars(description = "Optional project name or path to filter by")]
+    pub project: Option<String>,
 }
 
 /// Toki MCP Service
@@ -477,6 +489,70 @@ impl TokiService {
         }
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
+    }
+
+    /// Generate a work summary
+    #[tool(description = "Generate a natural language summary of work activity. Summarizes Claude Code sessions, time spent, and projects worked on.")]
+    async fn generate_summary(
+        &self,
+        Parameters(req): Parameters<GenerateSummaryRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let period = match req.period.to_lowercase().as_str() {
+            "today" => SummaryPeriod::Today,
+            "yesterday" => SummaryPeriod::Yesterday,
+            "week" => SummaryPeriod::Week,
+            "month" => SummaryPeriod::Month,
+            _ => {
+                return Ok(CallToolResult::success(vec![Content::text(
+                    format!("Unknown period '{}'. Use: today, yesterday, week, month", req.period)
+                )]));
+            }
+        };
+
+        let generator = WorkSummaryGenerator::new(self.db.clone());
+
+        let summary = if let Some(project) = &req.project {
+            // Try to find project by name or path
+            let project_info = self.db
+                .get_project_by_name(project)
+                .map_err(|e| Self::format_error(e.into()))?
+                .or_else(|| self.db.get_project_by_path(project).ok().flatten());
+
+            match project_info {
+                Some(p) => generator.generate_for_project(&p.path, period)
+                    .map_err(|e| Self::format_error(e.into()))?,
+                None => {
+                    return Ok(CallToolResult::success(vec![Content::text(
+                        format!("Project not found: {}", project)
+                    )]));
+                }
+            }
+        } else {
+            generator.generate(period)
+                .map_err(|e| Self::format_error(e.into()))?
+        };
+
+        let format = req.format.as_deref().unwrap_or("text");
+        let output = match format.to_lowercase().as_str() {
+            "json" => serde_json::to_string_pretty(&summary.to_json())
+                .unwrap_or_else(|_| "Error serializing JSON".to_string()),
+            "brief" => summary.generate_brief(),
+            "markdown" | "md" => summary.generate_text(),
+            "text" | _ => {
+                // Plain text version
+                let md = summary.generate_text();
+                md.lines()
+                    .map(|line| {
+                        line.trim_start_matches('#')
+                            .trim_start_matches('*')
+                            .trim_start()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+        };
+
+        Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 }
 

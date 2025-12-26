@@ -120,6 +120,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::session::SessionAction,
     },
+    /// Generate work summary
+    Summary {
+        #[command(subcommand)]
+        action: commands::summary::SummaryAction,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -231,5 +236,6 @@ async fn main() -> Result<()> {
             commands::suggest::run(path, max, apply)
         }
         Commands::Session { action } => commands::session::handle_session_command(action).await,
+        Commands::Summary { action } => commands::summary::handle_summary_command(action),
     }
 }

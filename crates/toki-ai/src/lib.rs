@@ -8,6 +8,7 @@ pub mod notion_issue_sync;
 pub mod notion_mapper;
 pub mod rules;
 pub mod time_analyzer;
+pub mod work_summary;
 
 pub use auto_linker::{AutoLinker, LinkReason, LinkSuggestion};
 pub use embedding::EmbeddingService;
@@ -24,3 +25,4 @@ pub use time_analyzer::{
     ActivitySegment, DailySummaryReport, SuggestedIssue, SuggestedTimeBlock, TimeAnalyzer,
     WorkPattern,
 };
+pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};

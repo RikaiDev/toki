@@ -13,4 +13,5 @@ pub mod report;
 pub mod review;
 pub mod session;
 pub mod suggest;
+pub mod summary;
 pub mod sync;
