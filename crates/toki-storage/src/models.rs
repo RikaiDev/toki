@@ -308,9 +308,10 @@ pub struct ActivityContext {
 pub struct IssueCandidate {
     pub id: Uuid,
     pub project_id: Uuid,            // Local project reference
-    pub external_id: String,         // e.g., "TOKI-9"
-    pub external_system: String,     // "plane", "github", etc.
+    pub external_id: String,         // e.g., "TOKI-9" or "2a24-f7e3c2a1"
+    pub external_system: String,     // "plane", "github", "notion", etc.
     pub pm_project_id: Option<String>, // Project ID in PM system
+    pub source_page_id: Option<String>, // Full page ID for Notion (for time updates)
     pub title: String,
     pub description: Option<String>,
     pub status: String,              // "backlog", "in_progress", "done"
@@ -335,6 +336,7 @@ impl IssueCandidate {
             external_id,
             external_system,
             pm_project_id: None,
+            source_page_id: None,
             title,
             description: None,
             status: "backlog".to_string(),

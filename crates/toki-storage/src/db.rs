@@ -1593,11 +1593,12 @@ impl Database {
 
         self.conn.execute(
             "INSERT INTO issue_candidates
-             (id, project_id, external_id, external_system, pm_project_id, title, description, status, labels, assignee, embedding, last_synced)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             (id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(external_id, external_system) DO UPDATE SET
                 project_id = excluded.project_id,
                 pm_project_id = excluded.pm_project_id,
+                source_page_id = COALESCE(excluded.source_page_id, issue_candidates.source_page_id),
                 title = excluded.title,
                 description = excluded.description,
                 status = excluded.status,
@@ -1611,6 +1612,7 @@ impl Database {
                 candidate.external_id,
                 candidate.external_system,
                 candidate.pm_project_id,
+                candidate.source_page_id,
                 candidate.title,
                 candidate.description,
                 candidate.status,
@@ -1647,7 +1649,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, title, description, status, labels, assignee, embedding, last_synced
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
              FROM issue_candidates
              WHERE project_id = ?1
              ORDER BY last_synced DESC",
@@ -1670,7 +1672,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, title, description, status, labels, assignee, embedding, last_synced
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
              FROM issue_candidates
              WHERE project_id = ?1 AND status NOT IN ('done', 'cancelled', 'completed')
              ORDER BY last_synced DESC",
@@ -1696,7 +1698,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, title, description, status, labels, assignee, embedding, last_synced
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
                  FROM issue_candidates
                  WHERE external_id = ?1 AND external_system = ?2",
                 params![external_id, external_system],
@@ -1705,6 +1707,35 @@ impl Database {
             .optional()?;
 
         Ok(result)
+    }
+
+    /// Get all Notion issue candidates with their page IDs
+    ///
+    /// Returns a map of external_id -> source_page_id for populating the NotionClient cache
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_notion_page_id_map(&self) -> Result<std::collections::HashMap<String, String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT external_id, source_page_id
+             FROM issue_candidates
+             WHERE external_system = 'notion' AND source_page_id IS NOT NULL",
+        )?;
+
+        let mut map = std::collections::HashMap::new();
+        let rows = stmt.query_map([], |row| {
+            let external_id: String = row.get(0)?;
+            let source_page_id: String = row.get(1)?;
+            Ok((external_id, source_page_id))
+        })?;
+
+        for row in rows {
+            let (external_id, source_page_id) = row?;
+            map.insert(external_id, source_page_id);
+        }
+
+        Ok(map)
     }
 
     /// Get projects that have PM system linked
@@ -1745,10 +1776,11 @@ impl Database {
 
     /// Helper function to parse `IssueCandidate` from database row
     fn row_to_issue_candidate(row: &rusqlite::Row) -> rusqlite::Result<IssueCandidate> {
-        let labels_json: String = row.get(8)?;
+        // Column order: id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+        let labels_json: String = row.get(9)?;
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
 
-        let embedding_bytes: Option<Vec<u8>> = row.get(10)?;
+        let embedding_bytes: Option<Vec<u8>> = row.get(11)?;
         let embedding = embedding_bytes.and_then(|b| {
             if b.len() % 4 != 0 {
                 return None;
@@ -1769,13 +1801,14 @@ impl Database {
             external_id: row.get(2)?,
             external_system: row.get(3)?,
             pm_project_id: row.get(4)?,
-            title: row.get(5)?,
-            description: row.get(6)?,
-            status: row.get(7)?,
+            source_page_id: row.get(5)?,
+            title: row.get(6)?,
+            description: row.get(7)?,
+            status: row.get(8)?,
             labels,
-            assignee: row.get(9)?,
+            assignee: row.get(10)?,
             embedding,
-            last_synced: DateTime::parse_from_rfc3339(&row.get::<_, String>(11)?)
+            last_synced: DateTime::parse_from_rfc3339(&row.get::<_, String>(12)?)
                 .unwrap()
                 .with_timezone(&Utc),
         })

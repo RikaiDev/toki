@@ -256,6 +256,7 @@ impl IssueSyncService {
                 candidate_data.title.clone(),
             );
             candidate.pm_project_id = Some(database_id.clone());
+            candidate.source_page_id = Some(candidate_data.page_id.clone());
             candidate.description = candidate_data.description.clone();
             candidate.status = candidate_data.status.clone();
             candidate.labels = candidate_data.labels.clone();

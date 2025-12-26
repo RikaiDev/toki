@@ -426,6 +426,21 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // Add source_page_id column to issue_candidates for Notion page lookups
+    let source_page_id_exists: Result<i32, rusqlite::Error> = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('issue_candidates') WHERE name='source_page_id'",
+        [],
+        |row| row.get(0),
+    );
+
+    if source_page_id_exists.unwrap_or(0) == 0 {
+        conn.execute(
+            "ALTER TABLE issue_candidates ADD COLUMN source_page_id TEXT",
+            [],
+        )?;
+        log::info!("Added source_page_id column to issue_candidates table");
+    }
+
     log::info!("Database schema initialized");
     Ok(())
 }
