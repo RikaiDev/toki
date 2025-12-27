@@ -4,6 +4,19 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/rust-1.70%2B-orange.svg)](https://www.rust-lang.org/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-blue.svg)]()
+
+---
+
+## Platform Support
+
+| Platform | Status | Notes |
+|----------|--------|-------|
+| macOS (Apple Silicon) | ✅ Supported | Primary development platform |
+| macOS (Intel) | ✅ Supported | |
+| Linux (x64) | ✅ Supported | |
+| Linux (ARM64) | ✅ Supported | |
+| Windows | ❌ Not supported | Uses Unix sockets for IPC. Use WSL2 instead. |
 
 ---
 
@@ -69,14 +82,37 @@ No buttons to click. No timers to start. Just work.
 
 ### Installation
 
+#### Option 1: Download from Releases (Recommended)
+
+Download the latest release from [GitHub Releases](https://github.com/RikaiDev/toki/releases):
+
 ```bash
-# Build from source
+# macOS (Apple Silicon)
+curl -LO https://github.com/RikaiDev/toki/releases/latest/download/toki-cli-aarch64-apple-darwin.tar.xz
+tar -xf toki-cli-aarch64-apple-darwin.tar.xz
+sudo cp toki-cli-aarch64-apple-darwin/toki /usr/local/bin/
+
+# macOS (Intel)
+curl -LO https://github.com/RikaiDev/toki/releases/latest/download/toki-cli-x86_64-apple-darwin.tar.xz
+tar -xf toki-cli-x86_64-apple-darwin.tar.xz
+sudo cp toki-cli-x86_64-apple-darwin/toki /usr/local/bin/
+
+# Linux (x64)
+curl -LO https://github.com/RikaiDev/toki/releases/latest/download/toki-cli-x86_64-unknown-linux-gnu.tar.xz
+tar -xf toki-cli-x86_64-unknown-linux-gnu.tar.xz
+sudo cp toki-cli-x86_64-unknown-linux-gnu/toki /usr/local/bin/
+```
+
+#### Option 2: Build from Source
+
+```bash
 cargo build --release
-
-# Install binary
 sudo cp target/release/toki /usr/local/bin/
+```
 
-# Initialize configuration
+#### Initialize
+
+```bash
 toki init
 ```
 
