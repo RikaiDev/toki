@@ -310,16 +310,16 @@ pub async fn handle_review_command(
 
         let mut saved_count = 0;
         for suggested in &summary.suggested_blocks {
-            // Convert suggested issues to work item UUIDs
+            // Convert suggested issues to issue candidate UUIDs
             let work_item_ids: Vec<_> = suggested
                 .suggested_issues
                 .iter()
                 .filter_map(|si| {
-                    // Try to find the work item by external ID
-                    db.get_work_item(&si.issue_id, "plane")
+                    // Try to find the issue candidate by external ID (supports all systems)
+                    db.get_issue_candidate_by_external_id(&si.issue_id)
                         .ok()
                         .flatten()
-                        .map(|wi| wi.id)
+                        .map(|ic| ic.id)
                 })
                 .collect();
 

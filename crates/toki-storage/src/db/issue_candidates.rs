@@ -169,6 +169,29 @@ impl Database {
         Ok(result)
     }
 
+    /// Get an issue candidate by UUID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_issue_candidate_by_id(
+        &self,
+        id: uuid::Uuid,
+    ) -> Result<Option<IssueCandidate>> {
+        let result = self
+            .conn
+            .query_row(
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+                 FROM issue_candidates
+                 WHERE id = ?1",
+                params![id.to_string()],
+                Self::row_to_issue_candidate,
+            )
+            .optional()?;
+
+        Ok(result)
+    }
+
     /// Get all Notion issue candidates with their page IDs
     ///
     /// Returns a map of external_id -> source_page_id for populating the NotionClient cache

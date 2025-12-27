@@ -41,21 +41,24 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
                 let time_blocks = db.get_confirmed_time_blocks()?;
 
                 for block in time_blocks {
-                    // Get the first associated work item
-                    if let Some(work_item_id) = block.work_item_ids.first() {
-                        if let Some(work_item) = db.get_work_item_by_id(*work_item_id)? {
-                            time_entries.push(TimeEntry {
-                                work_item_id: work_item.external_id.clone(),
-                                start_time: block.start_time,
-                                duration_seconds: (block.end_time - block.start_time).num_seconds()
-                                    as u32,
-                                description: block.description.clone(),
-                                category: block
-                                    .tags
-                                    .first()
-                                    .cloned()
-                                    .unwrap_or_else(|| "Development".to_string()),
-                            });
+                    // Get the first associated issue candidate
+                    if let Some(issue_id) = block.work_item_ids.first() {
+                        if let Some(issue) = db.get_issue_candidate_by_id(*issue_id)? {
+                            // Only sync issues from the target system (plane)
+                            if issue.external_system == "plane" {
+                                time_entries.push(TimeEntry {
+                                    work_item_id: issue.external_id.clone(),
+                                    start_time: block.start_time,
+                                    duration_seconds: (block.end_time - block.start_time).num_seconds()
+                                        as u32,
+                                    description: block.description.clone(),
+                                    category: block
+                                        .tags
+                                        .first()
+                                        .cloned()
+                                        .unwrap_or_else(|| "Development".to_string()),
+                                });
+                            }
                         }
                     }
                 }
@@ -125,20 +128,24 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
                 let time_blocks = db.get_confirmed_time_blocks()?;
 
                 for block in time_blocks {
-                    if let Some(work_item_id) = block.work_item_ids.first() {
-                        if let Some(work_item) = db.get_work_item_by_id(*work_item_id)? {
-                            time_entries.push(TimeEntry {
-                                work_item_id: work_item.external_id.clone(),
-                                start_time: block.start_time,
-                                duration_seconds: (block.end_time - block.start_time).num_seconds()
-                                    as u32,
-                                description: block.description.clone(),
-                                category: block
-                                    .tags
-                                    .first()
-                                    .cloned()
-                                    .unwrap_or_else(|| "Development".to_string()),
-                            });
+                    // Get the first associated issue candidate
+                    if let Some(issue_id) = block.work_item_ids.first() {
+                        if let Some(issue) = db.get_issue_candidate_by_id(*issue_id)? {
+                            // Only sync Notion issues with source_page_id
+                            if issue.external_system == "notion" && issue.source_page_id.is_some() {
+                                time_entries.push(TimeEntry {
+                                    work_item_id: issue.external_id.clone(),
+                                    start_time: block.start_time,
+                                    duration_seconds: (block.end_time - block.start_time).num_seconds()
+                                        as u32,
+                                    description: block.description.clone(),
+                                    category: block
+                                        .tags
+                                        .first()
+                                        .cloned()
+                                        .unwrap_or_else(|| "Development".to_string()),
+                                });
+                            }
                         }
                     }
                 }
