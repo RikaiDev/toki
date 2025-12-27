@@ -531,6 +531,30 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // Session issues table - links sessions to multiple issues (many-to-many)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS session_issues (
+            session_id TEXT NOT NULL,
+            issue_id TEXT NOT NULL,
+            issue_system TEXT NOT NULL,
+            relationship TEXT NOT NULL DEFAULT 'worked_on',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (session_id, issue_id, issue_system),
+            FOREIGN KEY (session_id) REFERENCES claude_sessions(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_issues_session ON session_issues(session_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_issues_issue ON session_issues(issue_id, issue_system)",
+        [],
+    )?;
+
     log::info!("Database schema initialized");
     Ok(())
 }

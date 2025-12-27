@@ -851,6 +851,117 @@ impl std::fmt::Display for OutcomeSummary {
     }
 }
 
+// ============================================================================
+// Session Issues (many-to-many linking)
+// ============================================================================
+
+/// Relationship type between a session and an issue
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum IssueRelationship {
+    /// Session worked on this issue
+    WorkedOn,
+    /// Session closed this issue
+    Closed,
+    /// Issue was referenced but not directly worked on
+    Referenced,
+}
+
+impl std::fmt::Display for IssueRelationship {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::WorkedOn => write!(f, "worked_on"),
+            Self::Closed => write!(f, "closed"),
+            Self::Referenced => write!(f, "referenced"),
+        }
+    }
+}
+
+impl std::str::FromStr for IssueRelationship {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "worked_on" => Ok(Self::WorkedOn),
+            "closed" => Ok(Self::Closed),
+            "referenced" => Ok(Self::Referenced),
+            _ => Err(format!("Unknown issue relationship: {s}")),
+        }
+    }
+}
+
+/// Links a Claude session to an issue/work item
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionIssue {
+    /// Reference to claude_sessions.id (internal UUID)
+    pub session_id: Uuid,
+    /// External issue ID (e.g., "43", "GH-123", "PROJ-456")
+    pub issue_id: String,
+    /// Issue tracking system (github, notion, plane, jira, linear)
+    pub issue_system: String,
+    /// Relationship type
+    pub relationship: IssueRelationship,
+    /// When this link was created
+    pub created_at: DateTime<Utc>,
+}
+
+impl SessionIssue {
+    /// Create a new session-issue link
+    #[must_use]
+    pub fn new(
+        session_id: Uuid,
+        issue_id: String,
+        issue_system: String,
+        relationship: IssueRelationship,
+    ) -> Self {
+        Self {
+            session_id,
+            issue_id,
+            issue_system,
+            relationship,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a "worked on" link
+    #[must_use]
+    pub fn worked_on(session_id: Uuid, issue_id: &str, issue_system: &str) -> Self {
+        Self::new(
+            session_id,
+            issue_id.to_string(),
+            issue_system.to_string(),
+            IssueRelationship::WorkedOn,
+        )
+    }
+
+    /// Create a "closed" link
+    #[must_use]
+    pub fn closed(session_id: Uuid, issue_id: &str, issue_system: &str) -> Self {
+        Self::new(
+            session_id,
+            issue_id.to_string(),
+            issue_system.to_string(),
+            IssueRelationship::Closed,
+        )
+    }
+
+    /// Create a "referenced" link
+    #[must_use]
+    pub fn referenced(session_id: Uuid, issue_id: &str, issue_system: &str) -> Self {
+        Self::new(
+            session_id,
+            issue_id.to_string(),
+            issue_system.to_string(),
+            IssueRelationship::Referenced,
+        )
+    }
+
+    /// Format for display (e.g., "github#43")
+    #[must_use]
+    pub fn display_id(&self) -> String {
+        format!("{}#{}", self.issue_system, self.issue_id)
+    }
+}
+
 /// Classification rule type - determines how the pattern is matched
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PatternType {

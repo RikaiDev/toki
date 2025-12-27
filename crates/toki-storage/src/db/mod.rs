@@ -6,6 +6,7 @@ mod activity_spans;
 mod claude_sessions;
 mod issue_candidates;
 mod projects;
+mod session_issues;
 mod session_outcomes;
 mod synced_issues;
 

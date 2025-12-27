@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use clap::Subcommand;
-use toki_storage::models::{OutcomeSummary, OutcomeType, SessionOutcome};
+use toki_storage::models::{IssueRelationship, OutcomeSummary, OutcomeType, SessionIssue, SessionOutcome};
 use toki_storage::Database;
 
 #[derive(Subcommand, Debug)]
@@ -60,6 +60,21 @@ pub enum SessionAction {
         #[arg(long)]
         description: Option<String>,
     },
+    /// Link an issue to a session
+    Link {
+        /// Claude Code session ID
+        #[arg(long)]
+        id: String,
+        /// Issue ID (e.g., 43, GH-123, PROJ-456)
+        #[arg(long)]
+        issue: String,
+        /// Issue tracking system (github, notion, plane, jira, linear)
+        #[arg(long, default_value = "github")]
+        system: String,
+        /// Relationship type: worked_on, closed, referenced
+        #[arg(long, default_value = "worked_on")]
+        relationship: String,
+    },
 }
 
 /// Handle session commands
@@ -76,6 +91,12 @@ pub async fn handle_session_command(action: SessionAction) -> Result<()> {
             reference,
             description,
         } => add_outcome(&id, &outcome_type, reference.as_deref(), description.as_deref()),
+        SessionAction::Link {
+            id,
+            issue,
+            system,
+            relationship,
+        } => link_issue(&id, &issue, &system, &relationship),
     }
 }
 
@@ -241,6 +262,15 @@ fn show_session(session_id: &str) -> Result<()> {
     println!("Tool Calls: {}", session.tool_calls);
     println!("Prompts:    {}", session.prompt_count);
 
+    // Show linked issues
+    let issues = db.get_session_issues(session.id)?;
+    if !issues.is_empty() {
+        println!("\nLinked Issues:");
+        for issue in &issues {
+            println!("  {} [{}] ({})", issue.display_id(), issue.relationship, issue.created_at.format("%H:%M"));
+        }
+    }
+
     // Show outcomes
     let outcomes = db.get_session_outcomes(session.id)?;
     if !outcomes.is_empty() {
@@ -345,6 +375,57 @@ fn add_outcome(
         truncate_id(session_id),
         otype,
         reference.map(|r| format!(" ({})", r)).unwrap_or_default()
+    );
+
+    Ok(())
+}
+
+/// Link an issue to a session
+fn link_issue(
+    session_id: &str,
+    issue_id: &str,
+    issue_system: &str,
+    relationship: &str,
+) -> Result<()> {
+    let db = Database::new(None).context("Failed to open database")?;
+
+    // Find the session
+    let session = db
+        .get_claude_session(session_id)?
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+
+    // Parse relationship type
+    let rel: IssueRelationship = relationship
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!(e))?;
+
+    // Check for existing link
+    if db.session_issue_exists(session.id, issue_id, issue_system)? {
+        // Update relationship if it's an upgrade (e.g., worked_on -> closed)
+        db.update_session_issue_relationship(session.id, issue_id, issue_system, &rel)?;
+        println!(
+            "Updated issue link: {}#{} [{}]",
+            issue_system, issue_id, rel
+        );
+        return Ok(());
+    }
+
+    // Create and save the link
+    let issue_link = SessionIssue::new(
+        session.id,
+        issue_id.to_string(),
+        issue_system.to_string(),
+        rel.clone(),
+    );
+
+    db.add_session_issue(&issue_link)?;
+
+    println!(
+        "Linked issue to session {}: {}#{} [{}]",
+        truncate_id(session_id),
+        issue_system,
+        issue_id,
+        rel
     );
 
     Ok(())

@@ -1,0 +1,200 @@
+use anyhow::Result;
+use rusqlite::params;
+
+use crate::models::{IssueRelationship, SessionIssue};
+
+use super::Database;
+
+impl Database {
+    /// Link an issue to a Claude session
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn add_session_issue(&self, issue: &SessionIssue) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO session_issues (session_id, issue_id, issue_system, relationship, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                issue.session_id.to_string(),
+                issue.issue_id,
+                issue.issue_system,
+                issue.relationship.to_string(),
+                issue.created_at.to_rfc3339(),
+            ],
+        )?;
+        log::debug!(
+            "Linked issue {} to session {}: {:?}",
+            issue.display_id(),
+            issue.session_id,
+            issue.relationship
+        );
+        Ok(())
+    }
+
+    /// Get all issues linked to a session
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_session_issues(&self, session_id: uuid::Uuid) -> Result<Vec<SessionIssue>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, issue_id, issue_system, relationship, created_at
+             FROM session_issues
+             WHERE session_id = ?1
+             ORDER BY created_at ASC",
+        )?;
+
+        let issues = stmt
+            .query_map([session_id.to_string()], Self::row_to_session_issue)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(issues)
+    }
+
+    /// Get issues by relationship type for a session
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_session_issues_by_relationship(
+        &self,
+        session_id: uuid::Uuid,
+        relationship: &IssueRelationship,
+    ) -> Result<Vec<SessionIssue>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, issue_id, issue_system, relationship, created_at
+             FROM session_issues
+             WHERE session_id = ?1 AND relationship = ?2
+             ORDER BY created_at ASC",
+        )?;
+
+        let issues = stmt
+            .query_map(
+                params![session_id.to_string(), relationship.to_string()],
+                Self::row_to_session_issue,
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(issues)
+    }
+
+    /// Check if an issue is already linked to a session
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn session_issue_exists(
+        &self,
+        session_id: uuid::Uuid,
+        issue_id: &str,
+        issue_system: &str,
+    ) -> Result<bool> {
+        let count: i32 = self.conn.query_row(
+            "SELECT COUNT(*) FROM session_issues
+             WHERE session_id = ?1 AND issue_id = ?2 AND issue_system = ?3",
+            params![session_id.to_string(), issue_id, issue_system],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Update the relationship type for an existing session-issue link
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn update_session_issue_relationship(
+        &self,
+        session_id: uuid::Uuid,
+        issue_id: &str,
+        issue_system: &str,
+        relationship: &IssueRelationship,
+    ) -> Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE session_issues SET relationship = ?1
+             WHERE session_id = ?2 AND issue_id = ?3 AND issue_system = ?4",
+            params![
+                relationship.to_string(),
+                session_id.to_string(),
+                issue_id,
+                issue_system
+            ],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Delete all issue links for a session
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn delete_session_issues(&self, session_id: uuid::Uuid) -> Result<u32> {
+        let deleted = self.conn.execute(
+            "DELETE FROM session_issues WHERE session_id = ?1",
+            params![session_id.to_string()],
+        )?;
+        Ok(deleted as u32)
+    }
+
+    /// Delete a specific session-issue link
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn delete_session_issue(
+        &self,
+        session_id: uuid::Uuid,
+        issue_id: &str,
+        issue_system: &str,
+    ) -> Result<bool> {
+        let deleted = self.conn.execute(
+            "DELETE FROM session_issues
+             WHERE session_id = ?1 AND issue_id = ?2 AND issue_system = ?3",
+            params![session_id.to_string(), issue_id, issue_system],
+        )?;
+        Ok(deleted > 0)
+    }
+
+    /// Get all sessions that worked on a specific issue
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_sessions_for_issue(
+        &self,
+        issue_id: &str,
+        issue_system: &str,
+    ) -> Result<Vec<SessionIssue>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, issue_id, issue_system, relationship, created_at
+             FROM session_issues
+             WHERE issue_id = ?1 AND issue_system = ?2
+             ORDER BY created_at DESC",
+        )?;
+
+        let issues = stmt
+            .query_map(params![issue_id, issue_system], Self::row_to_session_issue)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(issues)
+    }
+
+    /// Helper function to parse `SessionIssue` from database row
+    pub(crate) fn row_to_session_issue(row: &rusqlite::Row) -> rusqlite::Result<SessionIssue> {
+        let relationship_str: String = row.get(3)?;
+        let relationship = relationship_str
+            .parse::<IssueRelationship>()
+            .unwrap_or(IssueRelationship::WorkedOn);
+
+        Ok(SessionIssue {
+            session_id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            issue_id: row.get(1)?,
+            issue_system: row.get(2)?,
+            relationship,
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        })
+    }
+}
