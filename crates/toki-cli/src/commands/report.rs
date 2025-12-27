@@ -1,8 +1,9 @@
 /// Report and categories command handlers
 use anyhow::Result;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use tabled::{Table, Tabled};
 use toki_ai::InsightsGenerator;
+use toki_storage::models::OutcomeSummary;
 use toki_storage::Database;
 
 #[derive(Tabled)]
@@ -15,10 +16,22 @@ struct CategoryStats {
     percentage: String,
 }
 
-pub fn handle_report_command(period: String) -> Result<()> {
+#[derive(Tabled)]
+struct SessionOutcomeRow {
+    #[tabled(rename = "Session")]
+    session: String,
+    #[tabled(rename = "Project")]
+    project: String,
+    #[tabled(rename = "Duration")]
+    duration: String,
+    #[tabled(rename = "Outcomes")]
+    outcomes: String,
+}
+
+pub fn handle_report_command(period: &str, by_outcome: bool) -> Result<()> {
     let db = Database::new(None)?;
 
-    let (start, end) = match period.as_str() {
+    let (start, end) = match period {
         "today" => {
             let start = Utc::now()
                 .date_naive()
@@ -44,6 +57,20 @@ pub fn handle_report_command(period: String) -> Result<()> {
         }
     };
 
+    if by_outcome {
+        handle_outcome_report(&db, period, start, end)
+    } else {
+        handle_time_report(&db, period, start, end)
+    }
+}
+
+/// Generate time-based report (default)
+fn handle_time_report(
+    db: &Database,
+    period: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<()> {
     // Use activity_spans for more accurate data
     let spans = db.get_activity_spans(start, end)?;
 
@@ -56,7 +83,7 @@ pub fn handle_report_command(period: String) -> Result<()> {
     let total_time: u32 = category_time.values().sum();
 
     println!("\nTime Tracking Report: {period}");
-    println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
+    println!("{}", "═".repeat(28));
 
     let mut stats: Vec<CategoryStats> = category_time
         .into_iter()
@@ -86,6 +113,99 @@ pub fn handle_report_command(period: String) -> Result<()> {
     println!("\nTotal tracked time: {} minutes", total_time / 60);
 
     Ok(())
+}
+
+/// Generate outcome-based report
+fn handle_outcome_report(
+    db: &Database,
+    period: &str,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<()> {
+    // Get all sessions in the period
+    let sessions = db.get_claude_sessions(start, end)?;
+
+    if sessions.is_empty() {
+        println!("No Claude sessions found for period: {period}");
+        return Ok(());
+    }
+
+    // Aggregate outcomes across all sessions
+    let mut total_summary = OutcomeSummary::default();
+    let mut session_rows = Vec::new();
+
+    for session in &sessions {
+        let outcomes = db.get_session_outcomes(session.id)?;
+        let summary = OutcomeSummary::from_outcomes(&outcomes);
+
+        // Add to total
+        total_summary.commits += summary.commits;
+        total_summary.issues_closed += summary.issues_closed;
+        total_summary.prs_merged += summary.prs_merged;
+        total_summary.prs_created += summary.prs_created;
+        total_summary.files_changed += summary.files_changed;
+
+        // Only include sessions with outcomes in the table
+        if !summary.is_empty() {
+            let project_name = session
+                .project_id
+                .and_then(|pid| db.get_project(pid).ok().flatten())
+                .map(|p| p.name)
+                .unwrap_or_else(|| "-".to_string());
+
+            session_rows.push(SessionOutcomeRow {
+                session: truncate_id(&session.session_id),
+                project: project_name,
+                duration: format_duration(session.duration_seconds()),
+                outcomes: summary.to_string(),
+            });
+        }
+    }
+
+    println!("\nOutcome Report: {period}");
+    println!("{}", "═".repeat(28));
+
+    // Summary section
+    println!("\nSummary:");
+    println!("  Commits:        {:>4}", total_summary.commits);
+    println!("  Issues Closed:  {:>4}", total_summary.issues_closed);
+    println!("  PRs Created:    {:>4}", total_summary.prs_created);
+    println!("  PRs Merged:     {:>4}", total_summary.prs_merged);
+
+    if !session_rows.is_empty() {
+        println!("\nSessions with Outcomes:");
+        let table = Table::new(session_rows).to_string();
+        println!("{table}");
+    }
+
+    println!(
+        "\nTotal: {} sessions, {} outcomes",
+        sessions.len(),
+        total_summary.total()
+    );
+
+    Ok(())
+}
+
+/// Format duration in human-readable form
+fn format_duration(seconds: u32) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+
+    if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
+/// Truncate session ID for display
+fn truncate_id(id: &str) -> String {
+    if id.len() > 12 {
+        format!("{}...", &id[..12])
+    } else {
+        id.to_string()
+    }
 }
 
 pub fn handle_categories_command() -> Result<()> {

@@ -34,6 +34,9 @@ enum Commands {
         /// Time period: today, week, month, or custom
         #[arg(default_value = "today")]
         period: String,
+        /// Show report grouped by outcomes (commits, issues, PRs) instead of time
+        #[arg(long)]
+        by_outcome: bool,
     },
     /// Manage category rules
     Categories,
@@ -204,7 +207,9 @@ async fn main() -> Result<()> {
         Commands::DaemonInternalStart => commands::daemon::run_daemon_process().await,
         Commands::Stop => commands::daemon::stop_daemon(&data_dir).await,
         Commands::Status => commands::daemon::show_status(&data_dir).await,
-        Commands::Report { period } => commands::report::handle_report_command(period),
+        Commands::Report { period, by_outcome } => {
+            commands::report::handle_report_command(&period, by_outcome)
+        }
         Commands::Categories => commands::report::handle_categories_command(),
         Commands::Data { action } => match action {
             DataAction::Export { format, output } => {
