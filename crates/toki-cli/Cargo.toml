@@ -1,7 +1,10 @@
 [package]
 name = "toki-cli"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "Automatic time tracking for developers"
+repository = "https://github.com/RikaiDev/toki"
+license = "MIT"
 
 [[bin]]
 name = "toki"

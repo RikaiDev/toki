@@ -11,10 +11,11 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["RikaiDev"]
 license = "MIT"
+repository = "https://github.com/RikaiDev/toki"
 
 [workspace.dependencies]
 # Core dependencies
@@ -61,6 +62,11 @@ pedantic = { level = "warn", priority = -1 }
 complexity = "deny"
 cognitive_complexity = "deny"
 too_many_arguments = "deny"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 
 
