@@ -101,6 +101,17 @@ enum Commands {
         #[arg(short, long)]
         force: bool,
     },
+    /// Estimate issue complexity (AI-assisted)
+    Estimate {
+        /// Issue ID to estimate (e.g., 43, PROJ-123)
+        issue: String,
+        /// Set complexity manually: trivial, simple, moderate, complex, epic
+        #[arg(short, long)]
+        set: Option<String>,
+        /// Issue tracking system (github, notion, plane, jira)
+        #[arg(long, default_value = "github")]
+        system: String,
+    },
     /// Project management commands
     Project {
         #[command(subcommand)]
@@ -244,6 +255,9 @@ async fn main() -> Result<()> {
         }
         Commands::Learn { action } => commands::learn::handle_learn_command(action),
         Commands::IssueSync { force } => commands::issue_sync::handle_issue_sync_command(force).await,
+        Commands::Estimate { issue, set, system } => {
+            commands::estimate::handle_estimate_command(&issue, set.as_deref(), &system)
+        }
         Commands::Project { action } => commands::project::handle_project_command(action).await,
         Commands::Notion { action } => commands::notion::handle_notion_command(action).await,
         Commands::SuggestIssue { path, max, apply } => {

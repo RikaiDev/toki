@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::models::IssueCandidate;
+use crate::models::{Complexity, IssueCandidate};
 
 use super::Database;
 
@@ -18,11 +18,12 @@ impl Database {
             .embedding
             .as_ref()
             .map(|e| e.iter().flat_map(|f| f.to_le_bytes()).collect());
+        let complexity_value: Option<i32> = candidate.complexity.map(|c| c.points() as i32);
 
         self.conn.execute(
             "INSERT INTO issue_candidates
-             (id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             (id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(external_id, external_system) DO UPDATE SET
                 project_id = excluded.project_id,
                 pm_project_id = excluded.pm_project_id,
@@ -33,7 +34,9 @@ impl Database {
                 labels = excluded.labels,
                 assignee = excluded.assignee,
                 embedding = COALESCE(excluded.embedding, issue_candidates.embedding),
-                last_synced = excluded.last_synced",
+                last_synced = excluded.last_synced,
+                complexity = COALESCE(excluded.complexity, issue_candidates.complexity),
+                complexity_reason = COALESCE(excluded.complexity_reason, issue_candidates.complexity_reason)",
             params![
                 candidate.id.to_string(),
                 candidate.project_id.to_string(),
@@ -48,6 +51,8 @@ impl Database {
                 candidate.assignee,
                 embedding_bytes,
                 candidate.last_synced.to_rfc3339(),
+                complexity_value,
+                candidate.complexity_reason,
             ],
         )?;
         Ok(())
@@ -81,7 +86,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
              FROM issue_candidates
              WHERE project_id = ?1
              ORDER BY last_synced DESC",
@@ -104,7 +109,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
              FROM issue_candidates
              WHERE project_id = ?1 AND status NOT IN ('done', 'cancelled', 'completed')
              ORDER BY last_synced DESC",
@@ -130,7 +135,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
                  FROM issue_candidates
                  WHERE external_id = ?1 AND external_system = ?2",
                 params![external_id, external_system],
@@ -153,7 +158,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
                  FROM issue_candidates
                  WHERE external_id = ?1",
                 params![external_id],
@@ -195,7 +200,7 @@ impl Database {
 
     /// Helper function to parse `IssueCandidate` from database row
     pub(crate) fn row_to_issue_candidate(row: &rusqlite::Row) -> rusqlite::Result<IssueCandidate> {
-        // Column order: id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced
+        // Column order: id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
         let labels_json: String = row.get(9)?;
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
 
@@ -214,6 +219,10 @@ impl Database {
             )
         });
 
+        // Parse complexity from integer
+        let complexity_value: Option<i32> = row.get(13)?;
+        let complexity = complexity_value.and_then(|v| Complexity::from_points(v as u8));
+
         Ok(IssueCandidate {
             id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
             project_id: uuid::Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
@@ -230,6 +239,28 @@ impl Database {
             last_synced: DateTime::parse_from_rfc3339(&row.get::<_, String>(12)?)
                 .unwrap()
                 .with_timezone(&Utc),
+            complexity,
+            complexity_reason: row.get(14)?,
         })
+    }
+
+    /// Update complexity for an issue candidate
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn update_issue_complexity(
+        &self,
+        external_id: &str,
+        external_system: &str,
+        complexity: Complexity,
+        reason: &str,
+    ) -> Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE issue_candidates SET complexity = ?1, complexity_reason = ?2
+             WHERE external_id = ?3 AND external_system = ?4",
+            params![complexity.points() as i32, reason, external_id, external_system],
+        )?;
+        Ok(updated > 0)
     }
 }

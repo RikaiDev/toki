@@ -303,6 +303,80 @@ pub struct ActivityContext {
     pub window_titles: Vec<String>,  // Recent window titles
 }
 
+// ============================================================================
+// Issue Complexity
+// ============================================================================
+
+/// Complexity level for AI-assisted estimation
+/// Uses Fibonacci-like scale (1, 2, 3, 5, 8) for relative sizing
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Complexity {
+    /// Single-line fix, typo, obvious change (1 point)
+    Trivial = 1,
+    /// Single file, clear implementation (2 points)
+    Simple = 2,
+    /// Multiple files, some design decisions (3 points)
+    Moderate = 3,
+    /// Architectural changes, multiple components (5 points)
+    Complex = 5,
+    /// Major feature, significant refactoring (8 points)
+    Epic = 8,
+}
+
+impl Complexity {
+    /// Get the numeric value (story points)
+    #[must_use]
+    pub fn points(self) -> u8 {
+        self as u8
+    }
+
+    /// Get human-readable label
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Trivial => "trivial",
+            Self::Simple => "simple",
+            Self::Moderate => "moderate",
+            Self::Complex => "complex",
+            Self::Epic => "epic",
+        }
+    }
+
+    /// Create from numeric value
+    #[must_use]
+    pub fn from_points(points: u8) -> Option<Self> {
+        match points {
+            1 => Some(Self::Trivial),
+            2 => Some(Self::Simple),
+            3 => Some(Self::Moderate),
+            5 => Some(Self::Complex),
+            8 => Some(Self::Epic),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for Complexity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} ({})", self.label(), self.points())
+    }
+}
+
+impl std::str::FromStr for Complexity {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "trivial" | "1" => Ok(Self::Trivial),
+            "simple" | "2" => Ok(Self::Simple),
+            "moderate" | "3" => Ok(Self::Moderate),
+            "complex" | "5" => Ok(Self::Complex),
+            "epic" | "8" => Ok(Self::Epic),
+            _ => Err(format!("Unknown complexity: {s}. Use: trivial, simple, moderate, complex, epic")),
+        }
+    }
+}
+
 /// Issue candidate from PM system (cached for AI matching)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IssueCandidate {
@@ -320,6 +394,9 @@ pub struct IssueCandidate {
     #[serde(skip)]
     pub embedding: Option<Vec<f32>>, // 384-dim vector for semantic matching
     pub last_synced: DateTime<Utc>,
+    // AI-assisted estimation
+    pub complexity: Option<Complexity>,
+    pub complexity_reason: Option<String>,
 }
 
 impl IssueCandidate {
@@ -344,6 +421,8 @@ impl IssueCandidate {
             assignee: None,
             embedding: None,
             last_synced: Utc::now(),
+            complexity: None,
+            complexity_reason: None,
         }
     }
 

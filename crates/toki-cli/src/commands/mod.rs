@@ -1,6 +1,7 @@
 pub mod config;
 pub mod daemon;
 pub mod data;
+pub mod estimate;
 pub mod helpers;
 pub mod init;
 pub mod issue_sync;

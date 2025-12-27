@@ -441,6 +441,25 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         log::info!("Added source_page_id column to issue_candidates table");
     }
 
+    // Add complexity columns to issue_candidates for AI-assisted estimation
+    let complexity_exists: Result<i32, rusqlite::Error> = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('issue_candidates') WHERE name='complexity'",
+        [],
+        |row| row.get(0),
+    );
+
+    if complexity_exists.unwrap_or(0) == 0 {
+        conn.execute(
+            "ALTER TABLE issue_candidates ADD COLUMN complexity INTEGER",
+            [],
+        )?;
+        conn.execute(
+            "ALTER TABLE issue_candidates ADD COLUMN complexity_reason TEXT",
+            [],
+        )?;
+        log::info!("Added complexity columns to issue_candidates table");
+    }
+
     // Synced issues table - tracks Notion pages synced to GitHub/GitLab
     conn.execute(
         "CREATE TABLE IF NOT EXISTS synced_issues (
