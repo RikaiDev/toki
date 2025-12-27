@@ -6,6 +6,7 @@ pub mod helpers;
 pub mod init;
 pub mod issue_sync;
 pub mod learn;
+pub mod next;
 pub mod notion;
 pub mod plane;
 pub mod privacy;

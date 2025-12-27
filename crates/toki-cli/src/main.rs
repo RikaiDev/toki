@@ -148,6 +148,18 @@ enum Commands {
         #[arg(short, long)]
         date: Option<String>,
     },
+    /// Suggest the next task to work on
+    Next {
+        /// Maximum time available (e.g., 30m, 2h)
+        #[arg(short, long)]
+        time: Option<String>,
+        /// Focus level: deep, normal, low
+        #[arg(short, long)]
+        focus: Option<String>,
+        /// Number of suggestions to show
+        #[arg(short = 'n', long, default_value = "3")]
+        count: usize,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -267,6 +279,9 @@ async fn main() -> Result<()> {
         Commands::Summary { action } => commands::summary::handle_summary_command(action),
         Commands::Standup { format, date } => {
             commands::standup::handle_standup_command(&format, date.as_deref())
+        }
+        Commands::Next { time, focus, count } => {
+            commands::next::handle_next_command(time.as_deref(), focus.as_deref(), count)
         }
     }
 }
