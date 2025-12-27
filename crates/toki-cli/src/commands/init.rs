@@ -49,7 +49,28 @@ pub fn init_command(enable_encryption: bool) -> Result<()> {
         println!("Database initialized");
     }
 
-    println!("\nSetup complete! You can now start tracking:");
+    println!("\nSetup complete!");
+
+    // Platform-specific guidance
+    #[cfg(target_os = "macos")]
+    {
+        println!("\n========================================");
+        println!("  macOS Permission Required");
+        println!("========================================");
+        println!();
+        println!("Toki needs Accessibility permission to read window titles.");
+        println!();
+        println!("Please grant permission:");
+        println!("  1. Open System Settings > Privacy & Security > Accessibility");
+        println!("  2. Click the + button");
+        println!("  3. Add your terminal app (Terminal, iTerm2, etc.)");
+        println!("     OR add /usr/local/bin/toki directly");
+        println!();
+        println!("Without this permission, toki cannot detect which app you're using.");
+        println!("========================================");
+    }
+
+    println!("\nYou can now start tracking:");
     println!("  toki start");
 
     Ok(())

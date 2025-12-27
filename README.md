@@ -116,6 +116,9 @@ sudo cp target/release/toki /usr/local/bin/
 toki init
 ```
 
+> **macOS Users:** You'll need to grant Accessibility permission for toki to read window titles.
+> Go to **System Settings > Privacy & Security > Accessibility** and add your terminal app.
+
 See [INSTALL.md](INSTALL.md) for detailed instructions including system service setup.
 
 ### Basic Usage

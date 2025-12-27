@@ -16,9 +16,27 @@ toki init
 toki start
 ```
 
-## macOS - launchd Integration
+## macOS Setup
 
-### 1. Install Binary
+### 1. Grant Accessibility Permission (Required)
+
+Toki needs Accessibility permission to read window titles and detect which app you're using.
+
+1. Open **System Settings** > **Privacy & Security** > **Accessibility**
+2. Click the **+** button
+3. Add one of the following:
+   - Your terminal app (Terminal.app, iTerm2, Warp, etc.)
+   - Or `/usr/local/bin/toki` directly
+
+> ⚠️ **Without this permission, toki cannot detect your current activity.**
+
+To verify permission is working:
+```bash
+toki start
+toki status  # Should show current window info
+```
+
+### 2. Install Binary
 
 ```bash
 cargo build --release
@@ -26,7 +44,7 @@ sudo cp target/release/toki /usr/local/bin/
 sudo chmod +x /usr/local/bin/toki
 ```
 
-### 2. Setup launchd Service
+### 3. Setup launchd Service (Auto-start)
 
 ```bash
 # Copy plist file
@@ -42,7 +60,7 @@ launchctl load ~/Library/LaunchAgents/com.user.toki.plist
 launchctl list | grep toki
 ```
 
-### 3. Control the Service
+### 4. Control the Service
 
 ```bash
 # Stop service
