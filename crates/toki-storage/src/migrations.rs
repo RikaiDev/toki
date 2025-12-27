@@ -507,6 +507,30 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     )?;
 
+    // Session outcomes table - tracks concrete deliverables from Claude sessions
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS session_outcomes (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            outcome_type TEXT NOT NULL,
+            reference_id TEXT,
+            description TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES claude_sessions(id)
+        )",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_outcomes_session ON session_outcomes(session_id)",
+        [],
+    )?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_outcomes_type ON session_outcomes(outcome_type)",
+        [],
+    )?;
+
     log::info!("Database schema initialized");
     Ok(())
 }

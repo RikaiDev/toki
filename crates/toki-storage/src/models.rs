@@ -641,6 +641,216 @@ impl ClaudeSession {
     }
 }
 
+// ============================================================================
+// Session Outcomes
+// ============================================================================
+
+/// Type of outcome from a Claude session
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum OutcomeType {
+    /// Git commit made during session
+    Commit,
+    /// Issue closed (via commit message or manual)
+    IssueClosed,
+    /// Pull request merged
+    PrMerged,
+    /// Pull request created
+    PrCreated,
+    /// Files changed (creation/modification)
+    FilesChanged,
+}
+
+impl std::fmt::Display for OutcomeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Commit => write!(f, "commit"),
+            Self::IssueClosed => write!(f, "issue_closed"),
+            Self::PrMerged => write!(f, "pr_merged"),
+            Self::PrCreated => write!(f, "pr_created"),
+            Self::FilesChanged => write!(f, "files_changed"),
+        }
+    }
+}
+
+impl std::str::FromStr for OutcomeType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "commit" => Ok(Self::Commit),
+            "issue_closed" => Ok(Self::IssueClosed),
+            "pr_merged" => Ok(Self::PrMerged),
+            "pr_created" => Ok(Self::PrCreated),
+            "files_changed" => Ok(Self::FilesChanged),
+            _ => Err(format!("Unknown outcome type: {s}")),
+        }
+    }
+}
+
+/// A concrete outcome/deliverable from a Claude session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionOutcome {
+    pub id: Uuid,
+    /// Reference to the claude_sessions.id (internal UUID)
+    pub session_id: Uuid,
+    /// Type of outcome
+    pub outcome_type: OutcomeType,
+    /// External reference (commit hash, issue number, PR number)
+    pub reference_id: Option<String>,
+    /// Human-readable description
+    pub description: Option<String>,
+    /// When this outcome was recorded
+    pub created_at: DateTime<Utc>,
+}
+
+impl SessionOutcome {
+    /// Create a new session outcome
+    #[must_use]
+    pub fn new(
+        session_id: Uuid,
+        outcome_type: OutcomeType,
+        reference_id: Option<String>,
+        description: Option<String>,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            session_id,
+            outcome_type,
+            reference_id,
+            description,
+            created_at: Utc::now(),
+        }
+    }
+
+    /// Create a commit outcome
+    #[must_use]
+    pub fn commit(session_id: Uuid, commit_hash: &str, message: Option<&str>) -> Self {
+        Self::new(
+            session_id,
+            OutcomeType::Commit,
+            Some(commit_hash.to_string()),
+            message.map(String::from),
+        )
+    }
+
+    /// Create an issue closed outcome
+    #[must_use]
+    pub fn issue_closed(session_id: Uuid, issue_id: &str, title: Option<&str>) -> Self {
+        Self::new(
+            session_id,
+            OutcomeType::IssueClosed,
+            Some(issue_id.to_string()),
+            title.map(String::from),
+        )
+    }
+
+    /// Create a PR merged outcome
+    #[must_use]
+    pub fn pr_merged(session_id: Uuid, pr_id: &str, title: Option<&str>) -> Self {
+        Self::new(
+            session_id,
+            OutcomeType::PrMerged,
+            Some(pr_id.to_string()),
+            title.map(String::from),
+        )
+    }
+
+    /// Create a PR created outcome
+    #[must_use]
+    pub fn pr_created(session_id: Uuid, pr_id: &str, title: Option<&str>) -> Self {
+        Self::new(
+            session_id,
+            OutcomeType::PrCreated,
+            Some(pr_id.to_string()),
+            title.map(String::from),
+        )
+    }
+
+    /// Create a files changed outcome
+    #[must_use]
+    pub fn files_changed(session_id: Uuid, count: u32) -> Self {
+        Self::new(
+            session_id,
+            OutcomeType::FilesChanged,
+            Some(count.to_string()),
+            Some(format!("{count} files changed")),
+        )
+    }
+}
+
+/// Summary of outcomes for display
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OutcomeSummary {
+    pub commits: u32,
+    pub issues_closed: u32,
+    pub prs_merged: u32,
+    pub prs_created: u32,
+    pub files_changed: u32,
+}
+
+impl OutcomeSummary {
+    /// Create summary from a list of outcomes
+    #[must_use]
+    pub fn from_outcomes(outcomes: &[SessionOutcome]) -> Self {
+        let mut summary = Self::default();
+        for outcome in outcomes {
+            match outcome.outcome_type {
+                OutcomeType::Commit => summary.commits += 1,
+                OutcomeType::IssueClosed => summary.issues_closed += 1,
+                OutcomeType::PrMerged => summary.prs_merged += 1,
+                OutcomeType::PrCreated => summary.prs_created += 1,
+                OutcomeType::FilesChanged => {
+                    if let Some(ref count_str) = outcome.reference_id {
+                        if let Ok(count) = count_str.parse::<u32>() {
+                            summary.files_changed += count;
+                        }
+                    }
+                }
+            }
+        }
+        summary
+    }
+
+    /// Check if there are any outcomes
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.commits == 0
+            && self.issues_closed == 0
+            && self.prs_merged == 0
+            && self.prs_created == 0
+            && self.files_changed == 0
+    }
+
+    /// Get total outcome count
+    #[must_use]
+    pub fn total(&self) -> u32 {
+        self.commits + self.issues_closed + self.prs_merged + self.prs_created
+    }
+}
+
+impl std::fmt::Display for OutcomeSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut parts = Vec::new();
+        if self.commits > 0 {
+            parts.push(format!("{} commit{}", self.commits, if self.commits == 1 { "" } else { "s" }));
+        }
+        if self.issues_closed > 0 {
+            parts.push(format!("{} issue{} closed", self.issues_closed, if self.issues_closed == 1 { "" } else { "s" }));
+        }
+        if self.prs_merged > 0 {
+            parts.push(format!("{} PR{} merged", self.prs_merged, if self.prs_merged == 1 { "" } else { "s" }));
+        }
+        if self.prs_created > 0 {
+            parts.push(format!("{} PR{} created", self.prs_created, if self.prs_created == 1 { "" } else { "s" }));
+        }
+        if parts.is_empty() {
+            write!(f, "no outcomes")
+        } else {
+            write!(f, "{}", parts.join(", "))
+        }
+    }
+}
+
 /// Classification rule type - determines how the pattern is matched
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PatternType {

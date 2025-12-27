@@ -6,6 +6,7 @@
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use clap::Subcommand;
+use toki_storage::models::{OutcomeSummary, OutcomeType, SessionOutcome};
 use toki_storage::Database;
 
 #[derive(Subcommand, Debug)]
@@ -44,6 +45,21 @@ pub enum SessionAction {
     },
     /// Show active (unclosed) sessions
     Active,
+    /// Add an outcome to a session
+    Outcome {
+        /// Claude Code session ID
+        #[arg(long)]
+        id: String,
+        /// Outcome type: commit, issue_closed, pr_merged, pr_created, files_changed
+        #[arg(long, value_name = "TYPE")]
+        outcome_type: String,
+        /// Reference ID (commit hash, issue number, PR number)
+        #[arg(long, value_name = "REF")]
+        reference: Option<String>,
+        /// Description of the outcome
+        #[arg(long)]
+        description: Option<String>,
+    },
 }
 
 /// Handle session commands
@@ -54,6 +70,12 @@ pub async fn handle_session_command(action: SessionAction) -> Result<()> {
         SessionAction::List { today, days } => list_sessions(today, days),
         SessionAction::Show { id } => show_session(&id),
         SessionAction::Active => list_active_sessions(),
+        SessionAction::Outcome {
+            id,
+            outcome_type,
+            reference,
+            description,
+        } => add_outcome(&id, &outcome_type, reference.as_deref(), description.as_deref()),
     }
 }
 
@@ -160,6 +182,14 @@ fn list_sessions(today: bool, days: u32) -> Result<()> {
             .map(|p| p.name)
             .unwrap_or_else(|| "-".to_string());
 
+        // Get outcome summary for this session
+        let outcome_summary = db.get_session_outcome_summary(session.id).unwrap_or_default();
+        let outcomes_str = if outcome_summary.is_empty() {
+            String::new()
+        } else {
+            format!(" | {}", outcome_summary)
+        };
+
         println!(
             "  {} {} {}",
             session.started_at.format("%Y-%m-%d %H:%M"),
@@ -167,11 +197,12 @@ fn list_sessions(today: bool, days: u32) -> Result<()> {
             status
         );
         println!(
-            "    ID: {} | Project: {} | Tools: {} | Prompts: {}",
+            "    ID: {} | Project: {} | Tools: {} | Prompts: {}{}",
             truncate_id(&session.session_id),
             project_name,
             session.tool_calls,
-            session.prompt_count
+            session.prompt_count,
+            outcomes_str
         );
         println!();
     }
@@ -210,6 +241,27 @@ fn show_session(session_id: &str) -> Result<()> {
     println!("Tool Calls: {}", session.tool_calls);
     println!("Prompts:    {}", session.prompt_count);
 
+    // Show outcomes
+    let outcomes = db.get_session_outcomes(session.id)?;
+    if !outcomes.is_empty() {
+        println!("\nOutcomes:");
+        for outcome in &outcomes {
+            let ref_str = outcome
+                .reference_id
+                .as_ref()
+                .map(|r| format!(" ({})", r))
+                .unwrap_or_default();
+            let desc_str = outcome
+                .description
+                .as_ref()
+                .map(|d| format!(" - {}", d))
+                .unwrap_or_default();
+            println!("  {} {}{}{}", outcome.created_at.format("%H:%M"), outcome.outcome_type, ref_str, desc_str);
+        }
+        let summary = OutcomeSummary::from_outcomes(&outcomes);
+        println!("\nSummary: {}", summary);
+    }
+
     Ok(())
 }
 
@@ -247,6 +299,53 @@ fn list_active_sessions() -> Result<()> {
         );
         println!();
     }
+
+    Ok(())
+}
+
+/// Add an outcome to a session
+fn add_outcome(
+    session_id: &str,
+    outcome_type: &str,
+    reference: Option<&str>,
+    description: Option<&str>,
+) -> Result<()> {
+    let db = Database::new(None).context("Failed to open database")?;
+
+    // Find the session
+    let session = db
+        .get_claude_session(session_id)?
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+
+    // Parse outcome type
+    let otype: OutcomeType = outcome_type
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!(e))?;
+
+    // Check for duplicate
+    if let Some(ref_id) = reference {
+        if db.outcome_exists(session.id, &otype, ref_id)? {
+            println!("Outcome already recorded: {} ({})", otype, ref_id);
+            return Ok(());
+        }
+    }
+
+    // Create and save outcome
+    let outcome = SessionOutcome::new(
+        session.id,
+        otype.clone(),
+        reference.map(String::from),
+        description.map(String::from),
+    );
+
+    db.add_session_outcome(&outcome)?;
+
+    println!(
+        "Added outcome to session {}: {}{}",
+        truncate_id(session_id),
+        otype,
+        reference.map(|r| format!(" ({})", r)).unwrap_or_default()
+    );
 
     Ok(())
 }
