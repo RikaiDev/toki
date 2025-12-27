@@ -4,7 +4,6 @@
 
 use anyhow::{Context, Result};
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command;
 use toki_storage::{default_key_path, generate_key, save_key_to_file, Database};
 
@@ -149,7 +148,7 @@ fn setup_autostart() -> Result<()> {
 }
 
 #[cfg(target_os = "macos")]
-fn generate_macos_plist(toki_path: &PathBuf, data_dir: &PathBuf) -> String {
+fn generate_macos_plist(toki_path: &std::path::Path, data_dir: &std::path::Path) -> String {
     let log_path = data_dir.join("toki.log");
     let err_log_path = data_dir.join("toki.err.log");
 
