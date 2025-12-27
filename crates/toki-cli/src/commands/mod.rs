@@ -4,6 +4,7 @@ pub mod data;
 pub mod estimate;
 pub mod helpers;
 pub mod init;
+pub mod insights;
 pub mod issue_sync;
 pub mod learn;
 pub mod next;

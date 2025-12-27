@@ -160,6 +160,18 @@ enum Commands {
         #[arg(short = 'n', long, default_value = "3")]
         count: usize,
     },
+    /// Analyze productivity patterns and detect anomalies
+    Insights {
+        /// Time period: week, month, or custom range (YYYY-MM-DD:YYYY-MM-DD)
+        #[arg(short, long, default_value = "week")]
+        period: String,
+        /// Compare with previous period
+        #[arg(short, long)]
+        compare: bool,
+        /// Focus on specific aspect: hours, sessions, context-switches
+        #[arg(long)]
+        focus: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -282,6 +294,9 @@ async fn main() -> Result<()> {
         }
         Commands::Next { time, focus, count } => {
             commands::next::handle_next_command(time.as_deref(), focus.as_deref(), count)
+        }
+        Commands::Insights { period, compare, focus } => {
+            commands::insights::handle_insights_command(&period, compare, focus.as_deref())
         }
     }
 }
