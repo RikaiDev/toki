@@ -29,10 +29,29 @@ No buttons to click. No timers to start. Just work.
 - **Automatic project detection** - Parses IDE window titles (VS Code, Cursor, etc.)
 - **Git branch to issue linking** - Extracts issue IDs from branch names (e.g., `feature/PROJ-123`)
 
-### AI-Powered Classification
+### AI-Powered Intelligence
 - **Semantic Gravity** - Uses local embeddings to classify activities by relevance
 - **Smart issue matching** - Suggests related issues based on your work context
+- **Time estimation** - AI-powered estimates based on complexity and historical data
+- **Next task suggestion** - Recommends what to work on based on context and constraints
 - **No explicit rules needed** - AI learns from patterns, not configurations
+
+### Claude Code Integration
+- **Automatic session tracking** - Hooks into Claude Code for seamless tracking
+- **Outcome recording** - Tracks commits, issues opened/closed, PRs created
+- **Multi-issue sessions** - Link multiple issues to a single coding session
+- **Work context awareness** - Understands what you're working on from git state
+
+### Productivity Insights
+- **Anomaly detection** - Identifies unusual patterns in your work
+- **Peak hours analysis** - Find your most productive times
+- **Context switch tracking** - Monitor focus fragmentation
+- **Actionable suggestions** - Get personalized productivity tips
+
+### Reports & Summaries
+- **Standup reports** - Auto-generate yesterday/today/blockers format
+- **Work summaries** - AI-powered narrative of your accomplishments
+- **Multiple formats** - Text, Markdown, Slack, Discord, Teams, JSON
 
 ### Privacy-First
 - **100% local** - All data stored in SQLite on your machine
@@ -42,7 +61,7 @@ No buttons to click. No timers to start. Just work.
 ### PM System Integration
 - **Plane.so** - Sync time entries to your project management system
 - **Notion** - Use Notion databases as issue sources with time tracking
-- **More coming** - GitHub, Jira, Linear (planned)
+- **GitHub/GitLab** - Sync issues and track time against them
 
 ---
 
@@ -63,7 +82,7 @@ toki init
 
 See [INSTALL.md](INSTALL.md) for detailed instructions including system service setup.
 
-### Usage
+### Basic Usage
 
 ```bash
 # Start the daemon
@@ -80,6 +99,42 @@ toki review
 
 # Stop the daemon
 toki stop
+```
+
+### AI-Powered Features
+
+```bash
+# Estimate time for an issue
+toki estimate 123                    # By issue number
+toki estimate PROJ-123 --system github
+
+# Get next task suggestion
+toki next                            # Default suggestions
+toki next --time 30m --focus low     # With constraints
+toki next --time 2h --focus deep     # Deep work mode
+
+# Suggest issues from current work context
+toki suggest-issue                   # From current directory
+toki suggest-issue --apply           # Auto-link best match
+```
+
+### Reports & Insights
+
+```bash
+# Generate standup report
+toki standup                         # Text format
+toki standup --format slack          # Slack-formatted
+toki standup --format json           # JSON for automation
+
+# Generate work summary
+toki summary generate                # AI-powered narrative
+toki summary generate --format json
+
+# View productivity insights
+toki insights                        # Weekly summary
+toki insights --period month         # Monthly analysis
+toki insights --compare              # Compare with previous period
+toki insights --focus sessions       # Focus on session patterns
 ```
 
 ### Plane.so Integration
@@ -169,6 +224,89 @@ toki notion sync-status --database <database-id>
 
 # Dry-run mode (preview without creating issues)
 toki notion sync-to-github --database <database-id> --repo owner/repo --dry-run
+```
+
+### Claude Code Integration
+
+Toki integrates with [Claude Code](https://claude.com/claude-code) via hooks for automatic session tracking.
+
+#### Setup Hooks
+
+```bash
+# Create hooks directory
+mkdir -p ~/.claude/hooks
+
+# Create the hooks configuration
+cat > ~/.claude/hooks.json << 'EOF'
+{
+  "hooks": [
+    {
+      "event": "PostToolUse",
+      "script": "~/.claude/hooks/post_tool_use.sh"
+    }
+  ]
+}
+EOF
+
+# Create the post-tool-use hook
+cat > ~/.claude/hooks/post_tool_use.sh << 'EOF'
+#!/bin/bash
+# Auto-record outcomes to toki
+
+TOOL_NAME=$(echo "$CLAUDE_TOOL_USE" | jq -r '.tool_name // empty')
+TOOL_INPUT=$(echo "$CLAUDE_TOOL_USE" | jq -r '.tool_input // empty')
+SESSION_ID="$CLAUDE_SESSION_ID"
+CWD="$CLAUDE_WORKING_DIRECTORY"
+
+case "$TOOL_NAME" in
+  "Bash")
+    CMD=$(echo "$TOOL_INPUT" | jq -r '.command // empty')
+
+    # Detect git commits
+    if [[ "$CMD" =~ ^git\ commit ]]; then
+      MSG=$(echo "$CMD" | grep -oP '(?<=-m ["\x27])[^"\x27]+')
+      toki session record-outcome "$SESSION_ID" commit --ref "HEAD" --metadata "{\"message\":\"$MSG\"}" 2>/dev/null
+    fi
+
+    # Detect gh issue operations
+    if [[ "$CMD" =~ ^gh\ issue\ create ]]; then
+      toki session record-outcome "$SESSION_ID" issue_opened 2>/dev/null
+    elif [[ "$CMD" =~ ^gh\ issue\ close ]]; then
+      ISSUE=$(echo "$CMD" | grep -oP '\d+')
+      toki session record-outcome "$SESSION_ID" issue_closed --ref "$ISSUE" 2>/dev/null
+    fi
+
+    # Detect gh pr create
+    if [[ "$CMD" =~ ^gh\ pr\ create ]]; then
+      toki session record-outcome "$SESSION_ID" pr_opened 2>/dev/null
+    fi
+    ;;
+esac
+EOF
+
+chmod +x ~/.claude/hooks/post_tool_use.sh
+```
+
+#### Session Commands
+
+```bash
+# Start a session (usually automatic via hooks)
+toki session start <session-id> --cwd /path/to/project
+
+# Link issues to current session
+toki session link <session-id> --issue 123 --system github
+toki session link <session-id> --issue PROJ-456 --system notion
+
+# Record outcomes
+toki session record-outcome <session-id> commit --ref abc123
+toki session record-outcome <session-id> issue_closed --ref 42
+
+# End session
+toki session end <session-id>
+
+# View session history
+toki session list
+toki session show <session-id>
 ```
 
 ### MCP Server (for AI Agents)
@@ -492,19 +630,42 @@ toki/
 ### Data Flow
 
 ```
-System Monitor (active app, window title)
-        │
-        v
-Work Context Detector (project path, git branch)
-        │
-        v
-AI Classifier (semantic gravity scoring)
-        │
-        v
-ActivitySpan → SQLite Database
-        │
-        v
-CLI queries via Unix Socket IPC
+┌─────────────────────────────────────────────────────────────┐
+│                    Data Collection                          │
+├─────────────────────────────────────────────────────────────┤
+│  System Monitor          Claude Code Hooks                  │
+│  (active app, window)    (session, outcomes)                │
+│         │                       │                           │
+│         v                       v                           │
+│  Work Context Detector   Session Manager                    │
+│  (project, git branch)   (commits, issues, PRs)             │
+│         │                       │                           │
+│         v                       v                           │
+│  AI Classifier           Issue Linker                       │
+│  (semantic gravity)      (multi-issue support)              │
+│         │                       │                           │
+│         └───────────┬───────────┘                           │
+│                     v                                       │
+│              SQLite Database                                │
+└─────────────────────────────────────────────────────────────┘
+                      │
+                      v
+┌─────────────────────────────────────────────────────────────┐
+│                    AI Analysis                              │
+├─────────────────────────────────────────────────────────────┤
+│  Time Estimator    Next Task       Productivity Insights    │
+│  (historical +     Suggester       (anomaly detection,      │
+│   embeddings)      (scoring)        patterns)               │
+└─────────────────────────────────────────────────────────────┘
+                      │
+                      v
+┌─────────────────────────────────────────────────────────────┐
+│                    Output                                   │
+├─────────────────────────────────────────────────────────────┤
+│  CLI Reports    Standup/Summary    PM Sync    MCP Server    │
+│  (toki report)  (markdown/json)    (Notion,   (AI agents)   │
+│                                     GitHub)                 │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -555,6 +716,7 @@ TOKI_DB_PATH=...    # Custom database path
 
 ## Roadmap
 
+### Completed
 - [x] Automatic project detection
 - [x] Git branch issue extraction
 - [x] Plane.so integration
@@ -564,10 +726,19 @@ TOKI_DB_PATH=...    # Custom database path
 - [x] GitHub Issues integration
 - [x] GitLab Issues integration (including self-hosted)
 - [x] MCP server for AI agents
+- [x] Claude Code hooks integration
+- [x] Session outcome tracking (commits, issues, PRs)
+- [x] Multi-issue session linking
+- [x] AI-powered time estimation
+- [x] Smart next task suggestion
+- [x] Standup report generation
+- [x] Work summary generation
+- [x] Productivity insights & anomaly detection
+
+### Future
 - [ ] Jira integration
 - [ ] Linear integration
 - [ ] Web dashboard
-- [ ] Team sync (optional)
 
 ---
 
