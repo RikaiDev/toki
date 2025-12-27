@@ -180,6 +180,77 @@ impl Database {
         Ok(issues)
     }
 
+    /// Get total time spent on an issue across all sessions (in seconds)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_issue_total_time(
+        &self,
+        issue_id: &str,
+        issue_system: &str,
+    ) -> Result<u32> {
+        // Join session_issues with claude_sessions to sum up duration
+        let total: Option<i64> = self.conn.query_row(
+            "SELECT SUM(
+                CASE
+                    WHEN cs.ended_at IS NOT NULL THEN
+                        CAST((julianday(cs.ended_at) - julianday(cs.started_at)) * 86400 AS INTEGER)
+                    ELSE 0
+                END
+             )
+             FROM session_issues si
+             JOIN claude_sessions cs ON si.session_id = cs.id
+             WHERE si.issue_id = ?1 AND si.issue_system = ?2",
+            params![issue_id, issue_system],
+            |row| row.get(0),
+        )?;
+
+        Ok(total.unwrap_or(0) as u32)
+    }
+
+    /// Get time statistics for issues with historical data
+    ///
+    /// Returns a list of (issue_id, issue_system, total_seconds, session_count)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_issue_time_stats(&self) -> Result<Vec<IssueTimeStats>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT
+                si.issue_id,
+                si.issue_system,
+                COUNT(DISTINCT si.session_id) as session_count,
+                SUM(
+                    CASE
+                        WHEN cs.ended_at IS NOT NULL THEN
+                            CAST((julianday(cs.ended_at) - julianday(cs.started_at)) * 86400 AS INTEGER)
+                        ELSE 0
+                    END
+                ) as total_seconds
+             FROM session_issues si
+             JOIN claude_sessions cs ON si.session_id = cs.id
+             WHERE cs.ended_at IS NOT NULL
+             GROUP BY si.issue_id, si.issue_system
+             HAVING total_seconds > 0
+             ORDER BY total_seconds DESC",
+        )?;
+
+        let stats = stmt
+            .query_map([], |row| {
+                Ok(IssueTimeStats {
+                    issue_id: row.get(0)?,
+                    issue_system: row.get(1)?,
+                    session_count: row.get(2)?,
+                    total_seconds: row.get::<_, i64>(3)? as u32,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+
+        Ok(stats)
+    }
+
     /// Helper function to parse `SessionIssue` from database row
     pub(crate) fn row_to_session_issue(row: &rusqlite::Row) -> rusqlite::Result<SessionIssue> {
         let relationship_str: String = row.get(3)?;
@@ -197,4 +268,13 @@ impl Database {
                 .with_timezone(&chrono::Utc),
         })
     }
+}
+
+/// Time statistics for an issue
+#[derive(Debug, Clone)]
+pub struct IssueTimeStats {
+    pub issue_id: String,
+    pub issue_system: String,
+    pub session_count: u32,
+    pub total_seconds: u32,
 }

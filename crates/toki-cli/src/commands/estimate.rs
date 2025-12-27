@@ -1,18 +1,24 @@
-//! Issue complexity estimation command
+//! Issue complexity and time estimation command
 //!
-//! AI-assisted complexity estimation for issues based on codebase context.
+//! AI-assisted estimation for issues based on:
+//! - Complexity analysis (heuristics)
+//! - Historical data from similar issues
+//! - Embedding similarity
+
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use toki_ai::time_estimator::{TimeBreakdown, TimeEstimate, TimeEstimator};
 use toki_storage::models::Complexity;
 use toki_storage::Database;
 
-/// Estimate complexity for an issue
+/// Estimate complexity and time for an issue
 pub fn handle_estimate_command(
     issue_id: &str,
     set_complexity: Option<&str>,
     system: &str,
 ) -> Result<()> {
-    let db = Database::new(None).context("Failed to open database")?;
+    let db = Arc::new(Database::new(None).context("Failed to open database")?);
 
     // Find the issue
     let issue = db
@@ -46,7 +52,7 @@ pub fn handle_estimate_command(
             .parse()
             .map_err(|e: String| anyhow::anyhow!(e))?;
 
-        let reason = format!("Manually set via CLI");
+        let reason = "Manually set via CLI".to_string();
         db.update_issue_complexity(&issue.external_id, &issue.external_system, complexity, &reason)?;
 
         println!("Set complexity: {complexity}");
@@ -54,34 +60,97 @@ pub fn handle_estimate_command(
         return Ok(());
     }
 
-    // Show existing complexity if set
-    if let Some(complexity) = issue.complexity {
-        println!("Current complexity: {complexity}");
+    // Show complexity (existing or estimated)
+    let complexity = if let Some(c) = issue.complexity {
+        println!("Complexity: {c}");
         if let Some(reason) = &issue.complexity_reason {
             println!("Reason: {reason}");
         }
-        println!();
-        println!("Use --set <level> to update the complexity.");
-        return Ok(());
-    }
+        c
+    } else {
+        let (estimated, reason) = estimate_complexity(&issue.title, issue.description.as_deref(), &issue.labels);
+        println!("Suggested complexity: {estimated}");
+        println!("Reason: {reason}");
+        estimated
+    };
 
-    // Estimate complexity using heuristics
-    let (estimated, reason) = estimate_complexity(&issue.title, issue.description.as_deref(), &issue.labels);
+    println!();
 
-    println!("Suggested complexity: {estimated}");
-    println!("Reason: {reason}");
+    // Time estimation
+    println!("Time Estimation");
+    println!("{}", "─".repeat(40));
+
+    let estimator = TimeEstimator::new(db.clone());
+    let time_estimate = estimator.estimate(&issue)?;
+
+    print_time_estimate(&time_estimate, &complexity);
+
+    // Show complexity scale reference
     println!();
     println!("Complexity Scale:");
-    println!("  trivial (1) - Single-line fix, typo, obvious change");
-    println!("  simple  (2) - Single file, clear implementation");
-    println!("  moderate(3) - Multiple files, some design decisions");
-    println!("  complex (5) - Architectural changes, multiple components");
-    println!("  epic    (8) - Major feature, significant refactoring");
-    println!();
-    println!("To set this complexity, run:");
-    println!("  toki estimate {} --set {}", issue.external_id, estimated.label());
+    println!("  trivial (1) - Single-line fix, typo (~5 min)");
+    println!("  simple  (2) - Single file, clear implementation (~30 min)");
+    println!("  moderate(3) - Multiple files, some design (~2 hours)");
+    println!("  complex (5) - Architectural changes (~6 hours)");
+    println!("  epic    (8) - Major feature, significant refactoring (~20 hours)");
+
+    if issue.complexity.is_none() {
+        println!();
+        println!("To set complexity: toki estimate {} --set {}", issue.external_id, complexity.label());
+    }
 
     Ok(())
+}
+
+/// Print time estimate details
+fn print_time_estimate(estimate: &TimeEstimate, _complexity: &Complexity) {
+    println!();
+    println!("Estimated time: {}", estimate.formatted());
+    println!("Range: {} (80% confidence)", estimate.formatted_range());
+    println!("Method: {}", estimate.method);
+    println!("Confidence: {:.0}%", estimate.confidence * 100.0);
+
+    // Show similar issues if any
+    if !estimate.similar_issues.is_empty() {
+        println!();
+        println!("Based on similar issues:");
+        for similar in &estimate.similar_issues {
+            let complexity_str = similar
+                .complexity
+                .map(|c| format!(" [{}]", c.label()))
+                .unwrap_or_default();
+            println!(
+                "  - {} ({}) - {:.0}% similar{}",
+                similar.issue_id,
+                TimeEstimate::format_duration(similar.actual_seconds),
+                similar.similarity * 100.0,
+                complexity_str
+            );
+        }
+    }
+
+    // Show breakdown
+    if let Some(breakdown) = &estimate.breakdown {
+        println!();
+        println!("Suggested breakdown:");
+        print_breakdown(breakdown);
+    }
+}
+
+/// Print time breakdown
+fn print_breakdown(breakdown: &TimeBreakdown) {
+    println!(
+        "  Implementation: {}",
+        TimeEstimate::format_duration(breakdown.implementation_seconds)
+    );
+    println!(
+        "  Testing:        {}",
+        TimeEstimate::format_duration(breakdown.testing_seconds)
+    );
+    println!(
+        "  Documentation:  {}",
+        TimeEstimate::format_duration(breakdown.documentation_seconds)
+    );
 }
 
 /// Estimate complexity based on issue metadata using heuristics

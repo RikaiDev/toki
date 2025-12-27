@@ -10,6 +10,8 @@ mod session_issues;
 mod session_outcomes;
 mod synced_issues;
 
+pub use session_issues::IssueTimeStats;
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};

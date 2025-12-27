@@ -9,6 +9,7 @@ pub mod notion_mapper;
 pub mod rules;
 pub mod standup;
 pub mod time_analyzer;
+pub mod time_estimator;
 pub mod work_summary;
 
 pub use auto_linker::{AutoLinker, LinkReason, LinkSuggestion};
@@ -27,4 +28,7 @@ pub use time_analyzer::{
     WorkPattern,
 };
 pub use standup::{ProjectStandupItem, StandupFormat, StandupGenerator, StandupReport};
+pub use time_estimator::{
+    EstimationMethod, SimilarIssue, TimeBreakdown, TimeEstimate, TimeEstimator,
+};
 pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};
