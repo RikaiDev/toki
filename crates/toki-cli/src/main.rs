@@ -172,6 +172,12 @@ enum Commands {
         #[arg(long)]
         focus: Option<String>,
     },
+    /// Check for updates and install new version
+    Update {
+        /// Only check for updates, don't install
+        #[arg(short, long)]
+        check: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -298,5 +304,6 @@ async fn main() -> Result<()> {
         Commands::Insights { period, compare, focus } => {
             commands::insights::handle_insights_command(&period, compare, focus.as_deref())
         }
+        Commands::Update { check } => commands::update::handle_update_command(check),
     }
 }

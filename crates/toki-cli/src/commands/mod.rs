@@ -19,3 +19,4 @@ pub mod standup;
 pub mod suggest;
 pub mod summary;
 pub mod sync;
+pub mod update;
