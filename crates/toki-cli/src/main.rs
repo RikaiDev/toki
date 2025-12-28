@@ -52,7 +52,7 @@ enum Commands {
     },
     /// Synchronize time entries to PM system
     Sync {
-        /// PM system type (plane, notion, github, jira)
+        /// PM system type (plane, notion, gitlab, github, jira)
         #[arg(default_value = "plane")]
         system: String,
         /// Dry run (don't actually sync)

@@ -79,6 +79,9 @@ pub fn handle_config_list() -> Result<()> {
         if !config.api_url.is_empty() {
             println!("  api_url = {}", config.api_url);
         }
+        if let Some(ref project) = config.project_id {
+            println!("  project = {project}");
+        }
     }
 
     // List settings
@@ -196,8 +199,9 @@ fn set_config_value(db: &Database, key: &str, value: &str) -> Result<()> {
             match field {
                 "token" | "api_key" => config.api_key = value.to_string(),
                 "api_url" | "url" => config.api_url = value.to_string(),
+                "project" | "project_id" => config.project_id = Some(value.to_string()),
                 _ => anyhow::bail!(
-                    "Unknown field: {field}. Valid fields: token, api_url"
+                    "Unknown field: {field}. Valid fields: token, api_url, project"
                 ),
             }
 

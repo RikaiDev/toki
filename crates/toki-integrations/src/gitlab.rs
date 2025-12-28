@@ -2,6 +2,8 @@
 //!
 //! Implements the `IssueManagement` trait for GitLab projects.
 //! Supports both GitLab.com and self-hosted GitLab instances.
+//!
+//! Also implements `ProjectManagementSystem` for time tracking integration.
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::traits::{
     CreateIssueRequest, CreatedIssue, IssueDetails, IssueManagement, IssueState,
-    UpdateIssueRequest,
+    ProjectManagementSystem, SyncReport, TimeEntry, UpdateIssueRequest, WorkItemDetails,
 };
 
 /// GitLab API client for issue management
@@ -73,6 +75,33 @@ struct GitLabUpdateIssue {
     assignee_ids: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     milestone_id: Option<u64>,
+}
+
+/// GitLab time tracking statistics response
+#[derive(Debug, Deserialize)]
+pub struct GitLabTimeStats {
+    /// Time estimate in seconds
+    pub time_estimate: i64,
+    /// Total time spent in seconds
+    pub total_time_spent: i64,
+    /// Human-readable time estimate (e.g., "3h")
+    pub human_time_estimate: Option<String>,
+    /// Human-readable total time spent (e.g., "1h 30m")
+    pub human_total_time_spent: Option<String>,
+}
+
+/// GitLab add spent time request
+#[derive(Debug, Serialize)]
+struct GitLabAddSpentTimeRequest {
+    /// Duration string (e.g., "1h30m", "2h", "45m")
+    duration: String,
+}
+
+/// GitLab time estimate request
+#[derive(Debug, Serialize)]
+struct GitLabTimeEstimateRequest {
+    /// Duration string (e.g., "3h", "1d")
+    duration: String,
 }
 
 impl GitLabClient {
@@ -177,6 +206,191 @@ impl GitLabClient {
             title: issue.title,
             state,
         }
+    }
+
+    // =========================================================================
+    // Time Tracking Methods
+    // =========================================================================
+
+    /// Convert seconds to GitLab duration string format
+    ///
+    /// GitLab accepts duration strings like "1h30m", "2h", "45m", "1d", etc.
+    ///
+    /// # Examples
+    /// - 3600 seconds → "1h"
+    /// - 5400 seconds → "1h30m"
+    /// - 1800 seconds → "30m"
+    #[must_use]
+    pub fn seconds_to_duration(seconds: u32) -> String {
+        let hours = seconds / 3600;
+        let minutes = (seconds % 3600) / 60;
+
+        match (hours, minutes) {
+            (0, 0) => "0m".to_string(),
+            (0, m) => format!("{m}m"),
+            (h, 0) => format!("{h}h"),
+            (h, m) => format!("{h}h{m}m"),
+        }
+    }
+
+    /// Add spent time to an issue
+    ///
+    /// # Arguments
+    /// * `issue_iid` - Issue internal ID (the number shown in URLs, e.g., "123")
+    /// * `duration_seconds` - Time spent in seconds
+    /// * `summary` - Optional summary of work done (added as a note)
+    ///
+    /// # Errors
+    /// Returns an error if the API request fails
+    pub async fn add_spent_time(
+        &self,
+        issue_iid: &str,
+        duration_seconds: u32,
+        summary: Option<&str>,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/projects/{}/issues/{}/add_spent_time",
+            self.api_base, self.project, issue_iid
+        );
+
+        let duration = Self::seconds_to_duration(duration_seconds);
+        let request = GitLabAddSpentTimeRequest { duration };
+
+        log::debug!("Adding spent time to GitLab issue {}: {:?}", issue_iid, request);
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send add spent time request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("GitLab API error ({status}): {error_text}");
+        }
+
+        // Optionally add a note with the summary
+        if let Some(desc) = summary {
+            if let Err(e) = self
+                .add_note(
+                    issue_iid,
+                    &format!(
+                        "⏱️ Time logged: {} - {}",
+                        Self::seconds_to_duration(duration_seconds),
+                        desc
+                    ),
+                )
+                .await
+            {
+                log::warn!("Failed to add time log note: {e}");
+            }
+        }
+
+        log::info!(
+            "Added {} to GitLab issue #{}",
+            Self::seconds_to_duration(duration_seconds),
+            issue_iid
+        );
+
+        Ok(())
+    }
+
+    /// Get time tracking statistics for an issue
+    ///
+    /// # Arguments
+    /// * `issue_iid` - Issue internal ID
+    ///
+    /// # Errors
+    /// Returns an error if the API request fails
+    pub async fn get_time_stats(&self, issue_iid: &str) -> Result<GitLabTimeStats> {
+        let url = format!(
+            "{}/projects/{}/issues/{}/time_stats",
+            self.api_base, self.project, issue_iid
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .context("Failed to send get time stats request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("GitLab API error ({status}): {error_text}");
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse time stats response")
+    }
+
+    /// Set time estimate for an issue
+    ///
+    /// # Arguments
+    /// * `issue_iid` - Issue internal ID
+    /// * `duration_seconds` - Estimated time in seconds
+    ///
+    /// # Errors
+    /// Returns an error if the API request fails
+    pub async fn set_time_estimate(&self, issue_iid: &str, duration_seconds: u32) -> Result<()> {
+        let url = format!(
+            "{}/projects/{}/issues/{}/time_estimate",
+            self.api_base, self.project, issue_iid
+        );
+
+        let duration = Self::seconds_to_duration(duration_seconds);
+        let request = GitLabTimeEstimateRequest { duration };
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send set time estimate request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("GitLab API error ({status}): {error_text}");
+        }
+
+        Ok(())
+    }
+
+    /// Add a note (comment) to an issue
+    async fn add_note(&self, issue_iid: &str, body: &str) -> Result<()> {
+        let url = format!(
+            "{}/projects/{}/issues/{}/notes",
+            self.api_base, self.project, issue_iid
+        );
+
+        #[derive(Serialize)]
+        struct NoteRequest<'a> {
+            body: &'a str,
+        }
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&NoteRequest { body })
+            .send()
+            .await
+            .context("Failed to send add note request")?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_default();
+            anyhow::bail!("GitLab API error ({status}): {error_text}");
+        }
+
+        Ok(())
     }
 }
 
@@ -379,6 +593,60 @@ impl IssueManagement for GitLabClient {
     }
 }
 
+#[async_trait]
+impl ProjectManagementSystem for GitLabClient {
+    async fn fetch_work_item(&self, work_item_id: &str) -> Result<WorkItemDetails> {
+        let issue = self.get_issue(work_item_id).await?;
+
+        Ok(WorkItemDetails {
+            id: work_item_id.to_string(),
+            title: issue.title,
+            description: issue.body,
+            status: match issue.state {
+                IssueState::Open => "open".to_string(),
+                IssueState::Closed => "closed".to_string(),
+            },
+            project: Some(self.project.clone()),
+            workspace: None,
+        })
+    }
+
+    async fn add_time_entry(&self, entry: &TimeEntry) -> Result<()> {
+        let description = format!("{} - {}", entry.category, entry.description);
+
+        log::debug!(
+            "Adding time entry to GitLab issue {}: {} seconds",
+            entry.work_item_id,
+            entry.duration_seconds
+        );
+
+        self.add_spent_time(&entry.work_item_id, entry.duration_seconds, Some(&description))
+            .await
+    }
+
+    async fn batch_sync(&self, entries: Vec<TimeEntry>) -> Result<SyncReport> {
+        let mut report = SyncReport::new(entries.len());
+
+        for entry in entries {
+            match self.add_time_entry(&entry).await {
+                Ok(()) => report.record_success(),
+                Err(e) => report.record_failure(format!("Issue {}: {e}", entry.work_item_id)),
+            }
+        }
+
+        Ok(report)
+    }
+
+    async fn validate_credentials(&self) -> Result<bool> {
+        // Delegate to IssueManagement::validate_credentials
+        IssueManagement::validate_credentials(self).await
+    }
+
+    fn system_name(&self) -> &'static str {
+        "gitlab"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +658,32 @@ mod tests {
         assert!(client.is_ok());
         let client = client.unwrap();
         assert_eq!(client.project, "group%2Fproject");
+    }
+
+    #[test]
+    fn test_seconds_to_duration() {
+        // Zero
+        assert_eq!(GitLabClient::seconds_to_duration(0), "0m");
+
+        // Minutes only
+        assert_eq!(GitLabClient::seconds_to_duration(60), "1m");
+        assert_eq!(GitLabClient::seconds_to_duration(1800), "30m");
+        assert_eq!(GitLabClient::seconds_to_duration(3540), "59m");
+
+        // Hours only
+        assert_eq!(GitLabClient::seconds_to_duration(3600), "1h");
+        assert_eq!(GitLabClient::seconds_to_duration(7200), "2h");
+        assert_eq!(GitLabClient::seconds_to_duration(36000), "10h");
+
+        // Hours and minutes
+        assert_eq!(GitLabClient::seconds_to_duration(3660), "1h1m");
+        assert_eq!(GitLabClient::seconds_to_duration(5400), "1h30m");
+        assert_eq!(GitLabClient::seconds_to_duration(7260), "2h1m");
+        assert_eq!(GitLabClient::seconds_to_duration(9000), "2h30m");
+
+        // Edge cases - seconds are ignored (rounded down)
+        assert_eq!(GitLabClient::seconds_to_duration(59), "0m");
+        assert_eq!(GitLabClient::seconds_to_duration(3599), "59m");
+        assert_eq!(GitLabClient::seconds_to_duration(3661), "1h1m");
     }
 }
