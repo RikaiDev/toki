@@ -82,7 +82,13 @@ No buttons to click. No timers to start. Just work.
 
 ### Installation
 
-#### Option 1: Download from Releases (Recommended)
+#### Option 1: Homebrew (Recommended)
+
+```bash
+brew install RikaiDev/tap/toki
+```
+
+#### Option 2: Download from Releases
 
 Download the latest release from [GitHub Releases](https://github.com/RikaiDev/toki/releases):
 
@@ -103,7 +109,7 @@ tar -xf toki-cli-x86_64-unknown-linux-gnu.tar.xz
 sudo cp toki-cli-x86_64-unknown-linux-gnu/toki /usr/local/bin/
 ```
 
-#### Option 2: Build from Source
+#### Option 3: Build from Source
 
 ```bash
 cargo build --release

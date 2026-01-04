@@ -1,0 +1,113 @@
+# This workflow updates the Homebrew formula when a new release is published
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-homebrew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Compute SHA256 checksums
+        id: checksums
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BASE_URL="https://github.com/RikaiDev/toki/releases/download/v${VERSION}"
+          
+          AARCH64_DARWIN=$(curl -sL "${BASE_URL}/toki-cli-aarch64-apple-darwin.tar.xz" | sha256sum | cut -d' ' -f1)
+          X86_64_DARWIN=$(curl -sL "${BASE_URL}/toki-cli-x86_64-apple-darwin.tar.xz" | sha256sum | cut -d' ' -f1)
+          AARCH64_LINUX=$(curl -sL "${BASE_URL}/toki-cli-aarch64-unknown-linux-gnu.tar.xz" | sha256sum | cut -d' ' -f1)
+          X86_64_LINUX=$(curl -sL "${BASE_URL}/toki-cli-x86_64-unknown-linux-gnu.tar.xz" | sha256sum | cut -d' ' -f1)
+          
+          echo "aarch64_darwin=$AARCH64_DARWIN" >> $GITHUB_OUTPUT
+          echo "x86_64_darwin=$X86_64_DARWIN" >> $GITHUB_OUTPUT
+          echo "aarch64_linux=$AARCH64_LINUX" >> $GITHUB_OUTPUT
+          echo "x86_64_linux=$X86_64_LINUX" >> $GITHUB_OUTPUT
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: RikaiDev/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - name: Update formula
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA_AARCH64_DARWIN: ${{ steps.checksums.outputs.aarch64_darwin }}
+          SHA_X86_64_DARWIN: ${{ steps.checksums.outputs.x86_64_darwin }}
+          SHA_AARCH64_LINUX: ${{ steps.checksums.outputs.aarch64_linux }}
+          SHA_X86_64_LINUX: ${{ steps.checksums.outputs.x86_64_linux }}
+        run: |
+          cat > homebrew-tap/Formula/toki.rb << EOF
+          # typed: false
+          # frozen_string_literal: true
+
+          # Homebrew Formula for Toki - Automatic time tracking for developers
+          class Toki < Formula
+            desc "Automatic time tracking for developers - Track your work without thinking about it"
+            homepage "https://github.com/RikaiDev/toki"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/RikaiDev/toki/releases/download/v#{version}/toki-cli-aarch64-apple-darwin.tar.xz"
+                sha256 "${SHA_AARCH64_DARWIN}"
+              end
+              on_intel do
+                url "https://github.com/RikaiDev/toki/releases/download/v#{version}/toki-cli-x86_64-apple-darwin.tar.xz"
+                sha256 "${SHA_X86_64_DARWIN}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/RikaiDev/toki/releases/download/v#{version}/toki-cli-aarch64-unknown-linux-gnu.tar.xz"
+                sha256 "${SHA_AARCH64_LINUX}"
+              end
+              on_intel do
+                url "https://github.com/RikaiDev/toki/releases/download/v#{version}/toki-cli-x86_64-unknown-linux-gnu.tar.xz"
+                sha256 "${SHA_X86_64_LINUX}"
+              end
+            end
+
+            def install
+              bin.install "toki"
+            end
+
+            def caveats
+              on_macos do
+                <<~EOS
+                  To track window titles, you need to grant Accessibility permission:
+                  System Settings > Privacy & Security > Accessibility > Add your terminal app
+
+                  Quick start:
+                    toki init
+                    toki start
+                    toki status
+                EOS
+              end
+            end
+
+            test do
+              system "#{bin}/toki", "status"
+            end
+          end
+          EOF
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/toki.rb
+          git commit -m "chore: update toki to v${{ steps.version.outputs.version }}"
+          git push
