@@ -8,12 +8,13 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use toki_ai::AiService;
 use toki_ai::time_estimator::{TimeBreakdown, TimeEstimate, TimeEstimator};
 use toki_storage::models::Complexity;
 use toki_storage::Database;
 
 /// Estimate complexity and time for an issue
-pub fn handle_estimate_command(
+pub async fn handle_estimate_command(
     issue_id: &str,
     set_complexity: Option<&str>,
     system: &str,
@@ -80,8 +81,26 @@ pub fn handle_estimate_command(
     println!("Time Estimation");
     println!("{}", "─".repeat(40));
 
-    let estimator = TimeEstimator::new(db.clone());
-    let time_estimate = estimator.estimate(&issue)?;
+    // Initialize AI service
+    let ai_service = match db.get_ai_config() {
+        Ok(config) => {
+            if config.enabled {
+                match AiService::new(config) {
+                    Ok(service) => Some(service),
+                    Err(e) => {
+                        log::warn!("Failed to initialize AI service: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    };
+
+    let estimator = TimeEstimator::new(db.clone(), ai_service);
+    let time_estimate = estimator.estimate(&issue).await?;
 
     print_time_estimate(&time_estimate, &complexity);
 

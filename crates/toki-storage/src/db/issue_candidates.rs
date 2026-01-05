@@ -22,8 +22,8 @@ impl Database {
 
         self.conn.execute(
             "INSERT INTO issue_candidates
-             (id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             (id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(external_id, external_system) DO UPDATE SET
                 project_id = excluded.project_id,
                 pm_project_id = excluded.pm_project_id,
@@ -36,7 +36,9 @@ impl Database {
                 embedding = COALESCE(excluded.embedding, issue_candidates.embedding),
                 last_synced = excluded.last_synced,
                 complexity = COALESCE(excluded.complexity, issue_candidates.complexity),
-                complexity_reason = COALESCE(excluded.complexity_reason, issue_candidates.complexity_reason)",
+                complexity_reason = COALESCE(excluded.complexity_reason, issue_candidates.complexity_reason),
+                estimated_seconds = COALESCE(excluded.estimated_seconds, issue_candidates.estimated_seconds),
+                estimate_source = COALESCE(excluded.estimate_source, issue_candidates.estimate_source)",
             params![
                 candidate.id.to_string(),
                 candidate.project_id.to_string(),
@@ -53,6 +55,8 @@ impl Database {
                 candidate.last_synced.to_rfc3339(),
                 complexity_value,
                 candidate.complexity_reason,
+                candidate.estimated_seconds,
+                candidate.estimate_source,
             ],
         )?;
         Ok(())
@@ -86,7 +90,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
              FROM issue_candidates
              WHERE project_id = ?1
              ORDER BY last_synced DESC",
@@ -109,7 +113,7 @@ impl Database {
         project_id: uuid::Uuid,
     ) -> Result<Vec<IssueCandidate>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+            "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
              FROM issue_candidates
              WHERE project_id = ?1 AND status NOT IN ('done', 'cancelled', 'completed')
              ORDER BY last_synced DESC",
@@ -135,7 +139,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
                  FROM issue_candidates
                  WHERE external_id = ?1 AND external_system = ?2",
                 params![external_id, external_system],
@@ -158,7 +162,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
                  FROM issue_candidates
                  WHERE external_id = ?1",
                 params![external_id],
@@ -181,7 +185,7 @@ impl Database {
         let result = self
             .conn
             .query_row(
-                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
                  FROM issue_candidates
                  WHERE id = ?1",
                 params![id.to_string()],
@@ -223,7 +227,7 @@ impl Database {
 
     /// Helper function to parse `IssueCandidate` from database row
     pub(crate) fn row_to_issue_candidate(row: &rusqlite::Row) -> rusqlite::Result<IssueCandidate> {
-        // Column order: id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason
+        // Column order: id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
         let labels_json: String = row.get(9)?;
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
 
@@ -246,6 +250,10 @@ impl Database {
         let complexity_value: Option<i32> = row.get(13)?;
         let complexity = complexity_value.and_then(|v| Complexity::from_points(v as u8));
 
+        // Parse estimate fields
+        let estimated_seconds: Option<u32> = row.get::<_, Option<i64>>(15)?.map(|v| v as u32);
+        let estimate_source: Option<String> = row.get(16)?;
+
         Ok(IssueCandidate {
             id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
             project_id: uuid::Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
@@ -264,6 +272,8 @@ impl Database {
                 .with_timezone(&Utc),
             complexity,
             complexity_reason: row.get(14)?,
+            estimated_seconds,
+            estimate_source,
         })
     }
 
@@ -285,5 +295,61 @@ impl Database {
             params![complexity.points() as i32, reason, external_id, external_system],
         )?;
         Ok(updated > 0)
+    }
+
+    /// Update time estimate for an issue candidate (for scope tracking)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn update_issue_estimate(
+        &self,
+        external_id: &str,
+        external_system: &str,
+        estimated_seconds: u32,
+        source: &str,
+    ) -> Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE issue_candidates SET estimated_seconds = ?1, estimate_source = ?2
+             WHERE external_id = ?3 AND external_system = ?4",
+            params![estimated_seconds as i64, source, external_id, external_system],
+        )?;
+        Ok(updated > 0)
+    }
+
+    /// Get all issues with estimates for scope analysis
+    ///
+    /// Returns issues that have both an estimate and tracked time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn get_issues_with_estimates(&self, project_id: Option<uuid::Uuid>) -> Result<Vec<IssueCandidate>> {
+        let query = match project_id {
+            Some(_) => {
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
+                 FROM issue_candidates
+                 WHERE estimated_seconds IS NOT NULL AND project_id = ?1
+                 ORDER BY last_synced DESC"
+            }
+            None => {
+                "SELECT id, project_id, external_id, external_system, pm_project_id, source_page_id, title, description, status, labels, assignee, embedding, last_synced, complexity, complexity_reason, estimated_seconds, estimate_source
+                 FROM issue_candidates
+                 WHERE estimated_seconds IS NOT NULL
+                 ORDER BY last_synced DESC"
+            }
+        };
+
+        let mut stmt = self.conn.prepare(query)?;
+        let candidates = match project_id {
+            Some(pid) => stmt
+                .query_map([pid.to_string()], Self::row_to_issue_candidate)?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+            None => stmt
+                .query_map([], Self::row_to_issue_candidate)?
+                .collect::<std::result::Result<Vec<_>, _>>()?,
+        };
+
+        Ok(candidates)
     }
 }

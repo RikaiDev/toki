@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::ai_service::AiService;
 use anyhow::Result;
 use toki_storage::{Complexity, Database, IssueCandidate, IssueTimeStats};
 
@@ -99,7 +100,7 @@ impl TimeBreakdown {
 }
 
 /// Estimation method used
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EstimationMethod {
     /// Based on similar issues with historical data
     SimilarIssues,
@@ -107,6 +108,8 @@ pub enum EstimationMethod {
     ComplexityBased,
     /// Combination of both
     Combined,
+    /// AI RAG estimation (with model name)
+    AiRag(String),
 }
 
 impl std::fmt::Display for EstimationMethod {
@@ -115,33 +118,64 @@ impl std::fmt::Display for EstimationMethod {
             Self::SimilarIssues => write!(f, "Similar issues"),
             Self::ComplexityBased => write!(f, "Complexity-based"),
             Self::Combined => write!(f, "Combined analysis"),
+            Self::AiRag(model) => write!(f, "AI Estimation ({})", model),
         }
     }
 }
 
-/// Time estimator using historical data and embeddings
+/// Time estimator using historical data, embeddings, and generative AI
 pub struct TimeEstimator {
     db: Arc<Database>,
+    ai_service: Option<AiService>,
 }
 
 impl TimeEstimator {
     /// Create a new time estimator
     #[must_use]
-    pub fn new(db: Arc<Database>) -> Self {
-        Self { db }
+    pub fn new(db: Arc<Database>, ai_service: Option<AiService>) -> Self {
+        Self { db, ai_service }
     }
 
     /// Estimate time for an issue
     ///
     /// # Errors
     ///
-    /// Returns an error if database operations fail
-    pub fn estimate(&self, issue: &IssueCandidate) -> Result<TimeEstimate> {
+    /// Returns an error if database operations fail or AI service fails
+    pub async fn estimate(&self, issue: &IssueCandidate) -> Result<TimeEstimate> {
         // Get historical time stats
         let time_stats = self.db.get_issue_time_stats()?;
 
         // Find similar issues using embeddings
+        // Note: find_similar_issues is synchronous as it uses local embeddings
         let similar_issues = self.find_similar_issues(issue, &time_stats)?;
+
+        // Try AI estimation first if available
+        if let Some(ai) = &self.ai_service {
+            // Needed for prompt context
+            let similar_stats: Vec<IssueTimeStats> = similar_issues
+                .iter()
+                .filter_map(|s| {
+                    time_stats
+                        .iter()
+                        .find(|t| t.issue_id == s.issue_id)
+                        .cloned()
+                })
+                .collect();
+
+            if let Ok(seconds) = ai.estimate_time_rag(issue, &similar_stats).await {
+                return Ok(TimeEstimate {
+                    estimated_seconds: seconds,
+                    low_seconds: (seconds as f32 * 0.8) as u32,
+                    high_seconds: (seconds as f32 * 1.2) as u32,
+                    confidence: 0.8, // High confidence for AI
+                    similar_issues,
+                    method: EstimationMethod::AiRag(ai.model_name().to_string()),
+                    breakdown: Some(TimeBreakdown::from_total(seconds)),
+                });
+            }
+            // If AI fails, fall back to heuristic
+            log::warn!("AI estimation failed, falling back to heuristics");
+        }
 
         if !similar_issues.is_empty() {
             // Use similar issues for estimation

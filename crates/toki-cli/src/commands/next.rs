@@ -10,6 +10,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
+use toki_ai::AiService;
 use toki_ai::time_estimator::TimeEstimator;
 use toki_storage::models::Complexity;
 use toki_storage::{Database, IssueCandidate};
@@ -83,7 +84,7 @@ struct TaskSuggestion {
 }
 
 /// Handle the next task suggestion command
-pub fn handle_next_command(
+pub async fn handle_next_command(
     time: Option<&str>,
     focus: Option<&str>,
     count: usize,
@@ -133,8 +134,25 @@ pub fn handle_next_command(
         }
     }
 
-    // Create time estimator
-    let estimator = TimeEstimator::new(db.clone());
+    // Create time estimator with AI service
+    let ai_service = match db.get_ai_config() {
+        Ok(config) => {
+            if config.enabled {
+                match AiService::new(config) {
+                    Ok(service) => Some(service),
+                    Err(e) => {
+                        log::warn!("Failed to initialize AI service: {}", e);
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
+        Err(_) => None,
+    };
+
+    let estimator = TimeEstimator::new(db.clone(), ai_service);
 
     // Score and rank issues
     let mut suggestions: Vec<TaskSuggestion> = Vec::new();
@@ -144,7 +162,7 @@ pub fn handle_next_command(
         let mut reasons = Vec::new();
 
         // Estimate time
-        let time_estimate = estimator.estimate(&issue).ok();
+        let time_estimate = estimator.estimate(&issue).await.ok();
         let estimated_seconds = time_estimate
             .as_ref()
             .map(|e| e.estimated_seconds)

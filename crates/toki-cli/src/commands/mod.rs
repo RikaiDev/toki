@@ -14,6 +14,7 @@ pub mod privacy;
 pub mod project;
 pub mod report;
 pub mod review;
+pub mod scope;
 pub mod session;
 pub mod standup;
 pub mod suggest;

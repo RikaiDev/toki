@@ -172,6 +172,14 @@ enum Commands {
         #[arg(long)]
         focus: Option<String>,
     },
+    /// Analyze scope creep - compare estimated vs actual time
+    Scope {
+        /// Specific issue ID to check (optional)
+        issue: Option<String>,
+        /// Alert threshold percentage (default: 80%)
+        #[arg(short, long)]
+        threshold: Option<u32>,
+    },
     /// Check for updates and install new version
     Update {
         /// Only check for updates, don't install
@@ -286,7 +294,7 @@ async fn main() -> Result<()> {
         Commands::Learn { action } => commands::learn::handle_learn_command(action),
         Commands::IssueSync { force } => commands::issue_sync::handle_issue_sync_command(force).await,
         Commands::Estimate { issue, set, system } => {
-            commands::estimate::handle_estimate_command(&issue, set.as_deref(), &system)
+            commands::estimate::handle_estimate_command(&issue, set.as_deref(), &system).await
         }
         Commands::Project { action } => commands::project::handle_project_command(action).await,
         Commands::Notion { action } => commands::notion::handle_notion_command(action).await,
@@ -299,10 +307,13 @@ async fn main() -> Result<()> {
             commands::standup::handle_standup_command(&format, date.as_deref())
         }
         Commands::Next { time, focus, count } => {
-            commands::next::handle_next_command(time.as_deref(), focus.as_deref(), count)
+            commands::next::handle_next_command(time.as_deref(), focus.as_deref(), count).await
         }
         Commands::Insights { period, compare, focus } => {
             commands::insights::handle_insights_command(&period, compare, focus.as_deref())
+        }
+        Commands::Scope { issue, threshold } => {
+            commands::scope::handle_scope_command(issue.as_deref(), threshold)
         }
         Commands::Update { check } => commands::update::handle_update_command(check),
     }

@@ -1,3 +1,5 @@
+pub mod ai_provider;
+pub mod ai_service;
 pub mod auto_linker;
 pub mod embedding;
 pub mod gravity;
@@ -6,6 +8,7 @@ pub mod issue_matcher;
 pub mod issue_sync;
 pub mod notion_issue_sync;
 pub mod notion_mapper;
+pub mod providers;
 pub mod rules;
 pub mod standup;
 pub mod time_analyzer;
@@ -32,3 +35,10 @@ pub use time_estimator::{
     EstimationMethod, SimilarIssue, TimeBreakdown, TimeEstimate, TimeEstimator,
 };
 pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};
+pub use time_estimator::{
+    EstimationMethod, SimilarIssue, TimeBreakdown, TimeEstimate, TimeEstimator,
+};
+pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};
+
+pub use ai_provider::{create_provider, AiProviderTrait};
+pub use ai_service::AiService;

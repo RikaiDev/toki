@@ -397,6 +397,9 @@ pub struct IssueCandidate {
     // AI-assisted estimation
     pub complexity: Option<Complexity>,
     pub complexity_reason: Option<String>,
+    // Scope tracking - stored estimates for comparison with actual time
+    pub estimated_seconds: Option<u32>,
+    pub estimate_source: Option<String>, // "ai", "manual", "pm_system"
 }
 
 impl IssueCandidate {
@@ -423,6 +426,8 @@ impl IssueCandidate {
             last_synced: Utc::now(),
             complexity: None,
             complexity_reason: None,
+            estimated_seconds: None,
+            estimate_source: None,
         }
     }
 
@@ -1140,5 +1145,139 @@ impl ClassificationRule {
     pub fn record_hit(&mut self) {
         self.hit_count += 1;
         self.last_hit = Some(Utc::now());
+    }
+}
+
+// ============================================================================
+// AI Configuration
+// ============================================================================
+
+/// AI provider type
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AiProvider {
+    /// Google GenAI (Gemini API) - free tier available
+    #[default]
+    Google,
+    /// OpenAI API
+    OpenAi,
+    /// Anthropic Claude API
+    Anthropic,
+    /// Local Ollama server
+    Ollama,
+}
+
+impl AiProvider {
+    /// Parse from string (case-insensitive)
+    #[must_use]
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "google" | "gemini" | "genai" => Some(Self::Google),
+            "openai" | "gpt" => Some(Self::OpenAi),
+            "anthropic" | "claude" => Some(Self::Anthropic),
+            "ollama" | "local" => Some(Self::Ollama),
+            _ => None,
+        }
+    }
+
+    /// Get default model for this provider
+    #[must_use]
+    pub fn default_model(&self) -> &'static str {
+        match self {
+            Self::Google => "gemma-3-27b-it",
+            Self::OpenAi => "gpt-4o-mini",
+            Self::Anthropic => "claude-3-5-haiku-latest",
+            Self::Ollama => "gemma3:27b",
+        }
+    }
+
+    /// Get environment variable name for API key
+    #[must_use]
+    pub fn env_var_name(&self) -> Option<&'static str> {
+        match self {
+            Self::Google => Some("GOOGLE_API_KEY"),
+            Self::OpenAi => Some("OPENAI_API_KEY"),
+            Self::Anthropic => Some("ANTHROPIC_API_KEY"),
+            Self::Ollama => None, // No API key needed for local Ollama
+        }
+    }
+}
+
+impl std::fmt::Display for AiProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Google => write!(f, "google"),
+            Self::OpenAi => write!(f, "openai"),
+            Self::Anthropic => write!(f, "anthropic"),
+            Self::Ollama => write!(f, "ollama"),
+        }
+    }
+}
+
+/// AI service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiConfig {
+    /// AI provider (google, openai, anthropic, ollama)
+    pub provider: AiProvider,
+    /// Model name (provider-specific)
+    pub model: Option<String>,
+    /// API key (if not using env var)
+    pub api_key: Option<String>,
+    /// Base URL (for Ollama or custom endpoints)
+    pub base_url: Option<String>,
+    /// Whether AI features are enabled
+    pub enabled: bool,
+}
+
+impl Default for AiConfig {
+    fn default() -> Self {
+        Self {
+            provider: AiProvider::Google,
+            model: None,
+            api_key: None,
+            base_url: None,
+            enabled: true,
+        }
+    }
+}
+
+impl AiConfig {
+    /// Get the effective model (configured or provider default)
+    #[must_use]
+    pub fn effective_model(&self) -> &str {
+        self.model.as_deref().unwrap_or_else(|| self.provider.default_model())
+    }
+
+    /// Get API key from config or environment variable
+    #[must_use]
+    pub fn effective_api_key(&self) -> Option<String> {
+        // Config takes precedence over env var
+        if let Some(ref key) = self.api_key {
+            return Some(key.clone());
+        }
+
+        // Fall back to environment variable
+        if let Some(env_name) = self.provider.env_var_name() {
+            if let Ok(key) = std::env::var(env_name) {
+                return Some(key);
+            }
+        }
+
+        None
+    }
+
+    /// Get effective base URL for API calls
+    #[must_use]
+    pub fn effective_base_url(&self) -> &str {
+        if let Some(ref url) = self.base_url {
+            return url;
+        }
+
+        match self.provider {
+            AiProvider::Google => "https://generativelanguage.googleapis.com/v1beta",
+            AiProvider::OpenAi => "https://api.openai.com/v1",
+            AiProvider::Anthropic => "https://api.anthropic.com/v1",
+            AiProvider::Ollama => "http://localhost:11434",
+        }
     }
 }

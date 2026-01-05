@@ -246,8 +246,18 @@ fn set_config_value(db: &Database, key: &str, value: &str) -> Result<()> {
 
             db.update_settings(&settings)?;
         }
+        "ai" => {
+            match field {
+                "provider" => db.update_ai_config_field("provider", Some(value))?,
+                "model" => db.update_ai_config_field("model", Some(value))?,
+                "api_key" => db.update_ai_config_field("api_key", Some(value))?,
+                "base_url" => db.update_ai_config_field("base_url", Some(value))?,
+                "enabled" => db.update_ai_config_field("enabled", Some(value))?,
+                _ => anyhow::bail!("Unknown field: {field}. Valid fields: provider, model, api_key, base_url, enabled"),
+            }
+        }
         _ => anyhow::bail!(
-            "Unknown section: {section}. Valid sections: plane, github, gitlab, jira, notion, settings"
+            "Unknown section: {section}. Valid sections: plane, github, gitlab, jira, notion, settings, ai"
         ),
     }
 

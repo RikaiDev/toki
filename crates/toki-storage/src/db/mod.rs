@@ -3,6 +3,7 @@
 //! This module re-exports the main Database struct and all its operations.
 
 mod activity_spans;
+mod ai_config;
 mod claude_sessions;
 mod issue_candidates;
 mod projects;
@@ -957,5 +958,34 @@ impl Database {
             )
             .optional()?;
         Ok(result)
+    }
+
+    // ==================== AI Config Methods ====================
+
+    /// Get AI configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
+    pub fn get_ai_config(&self) -> Result<crate::models::AiConfig> {
+        ai_config::get_ai_config(&self.conn)
+    }
+
+    /// Save AI configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails
+    pub fn save_ai_config(&self, config: &crate::models::AiConfig) -> Result<()> {
+        ai_config::save_ai_config(&self.conn, config)
+    }
+
+    /// Update a specific AI configuration field
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails or key is unknown
+    pub fn update_ai_config_field(&self, key: &str, value: Option<&str>) -> Result<()> {
+        ai_config::update_ai_config_field(&self.conn, key, value)
     }
 }

@@ -460,6 +460,25 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         log::info!("Added complexity columns to issue_candidates table");
     }
 
+    // Add scope tracking columns to issue_candidates for estimated vs actual comparison
+    let estimated_seconds_exists: Result<i32, rusqlite::Error> = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('issue_candidates') WHERE name='estimated_seconds'",
+        [],
+        |row| row.get(0),
+    );
+
+    if estimated_seconds_exists.unwrap_or(0) == 0 {
+        conn.execute(
+            "ALTER TABLE issue_candidates ADD COLUMN estimated_seconds INTEGER",
+            [],
+        )?;
+        conn.execute(
+            "ALTER TABLE issue_candidates ADD COLUMN estimate_source TEXT",
+            [],
+        )?;
+        log::info!("Added scope tracking columns to issue_candidates table");
+    }
+
     // Synced issues table - tracks Notion pages synced to GitHub/GitLab
     conn.execute(
         "CREATE TABLE IF NOT EXISTS synced_issues (
@@ -571,6 +590,20 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
 
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_session_issues_issue ON session_issues(issue_id, issue_system)",
+        [],
+    )?;
+
+    // AI configuration table - stores AI provider settings
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS ai_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            provider TEXT NOT NULL DEFAULT 'google',
+            model TEXT,
+            api_key TEXT,
+            base_url TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )",
         [],
     )?;
 
