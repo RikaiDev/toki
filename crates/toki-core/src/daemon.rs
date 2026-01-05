@@ -4,6 +4,7 @@ use crate::{
     ipc::{listen, DaemonIpcHandler},
     monitor::{create_monitor, SystemMonitor},
     session_manager::SessionManager,
+    ai_classifier::{AiClassifier, ContextSnapshot},
 };
 use anyhow::Result;
 use std::{sync::Arc, time::Duration};
@@ -11,11 +12,13 @@ use toki_detector::WorkContextDetector;
 use toki_storage::{ActivitySpan, Database};
 use tokio::time::interval;
 use uuid::Uuid;
+use toki_ai::AiService;
 
 pub struct Daemon {
     database: Arc<Database>,
     monitor: Box<dyn SystemMonitor>,
     classifier: Classifier,
+    ai_classifier: Option<AiClassifier>,
     context_detector: WorkContextDetector,
     session_manager: SessionManager,
     ipc_handler: Arc<DaemonIpcHandler>,
@@ -31,15 +34,37 @@ pub struct Daemon {
 
 impl Daemon {
     pub fn new(db: Database, tick_interval_seconds: u64) -> Result<Self> {
-        let db = Arc::new(db);
+        let db_arc = Arc::new(db);
         let shutdown_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
+        // Initialize AI Classifier if enabled
+        let ai_classifier = match db_arc.get_ai_config() {
+            Ok(config) if config.enabled => {
+                match AiService::new(config) {
+                    Ok(service) => {
+                        log::info!("AI Classifier enabled with model: {}", service.model_name());
+                        Some(AiClassifier::new(Arc::new(service), 100))
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to initialize AI service for classifier: {}", e);
+                        None
+                    }
+                }
+            }
+            Ok(_) => {
+                log::info!("AI Classifier disabled in config");
+                None
+            },
+            Err(_) => None,
+        };
+
         Ok(Self {
-            database: db.clone(),
+            database: db_arc.clone(),
             monitor: create_monitor()?,
-            classifier: Classifier::from_database_arc(db.clone())?,
+            classifier: Classifier::from_database_arc(db_arc.clone())?,
+            ai_classifier,
             context_detector: WorkContextDetector::new(),
-            session_manager: SessionManager::new(db.clone()),
+            session_manager: SessionManager::new(db_arc.clone()),
             ipc_handler: Arc::new(DaemonIpcHandler::new(shutdown_signal.clone())),
             shutdown_signal,
             current_activity_span: None,
@@ -155,7 +180,7 @@ impl Daemon {
         }
 
         // Detect project (primary) and work item (optional)
-        let (project_id, work_item_id) = self
+        let (project_id, work_item_id, project_name) = self
             .detect_project_and_work_item(window_title.as_deref())
             .await?;
 
@@ -170,10 +195,24 @@ impl Daemon {
                 return Ok(());
             }
 
-            // Use window title for better classification (e.g., AI CLI tools in terminal)
-            let category = self
-                .classifier
-                .classify_with_context(&app.app_id, window_title.as_deref());
+            // Semantic Classification
+            let category = if let Some(ai) = &self.ai_classifier {
+                 let snapshot = ContextSnapshot {
+                     app_id: app.app_id.clone(),
+                     window_title: window_title.clone(),
+                     git_branch: None,
+                     project_name: project_name.clone(),
+                 };
+                 match ai.classify(snapshot).await {
+                     Ok(res) => res.category,
+                     Err(e) => {
+                         log::debug!("AI classification skipped/failed: {}", e);
+                         self.classifier.classify_with_context(&app.app_id, window_title.as_deref())
+                     }
+                 }
+            } else {
+                self.classifier.classify_with_context(&app.app_id, window_title.as_deref())
+            };
 
             // Only create new span when APP changes (not when project changes within same app)
             // This allows natural multi-window workflows without fragmenting time tracking
@@ -229,10 +268,10 @@ impl Daemon {
     async fn detect_project_and_work_item(
         &self,
         window_title: Option<&str>,
-    ) -> Result<(Option<Uuid>, Option<Uuid>)> {
+    ) -> Result<(Option<Uuid>, Option<Uuid>, Option<String>)> {
         let settings = self.database.get_settings()?;
         if !settings.enable_work_item_tracking {
-            return Ok((None, None));
+            return Ok((None, None, None));
         }
 
         log::debug!("Detecting project from window_title: {window_title:?}");
@@ -257,20 +296,20 @@ impl Daemon {
                 .get_or_create_project(&project_name, &path_str)?;
 
             // Update IPC with project name
-            self.ipc_handler.set_current_issue(Some(project_name)).await;
+            self.ipc_handler.set_current_issue(Some(project_name.clone())).await;
 
             // Try to detect work item from git (optional)
             let work_item_id = self.detect_work_item_from_git(&path).await?;
 
-            Some((project.id, work_item_id))
+            Some((project.id, work_item_id, Some(project_name)))
         } else {
             self.ipc_handler.set_current_issue(None).await;
             None
         };
 
         match project_id {
-            Some((pid, wid)) => Ok((Some(pid), wid)),
-            None => Ok((None, None)),
+            Some((pid, wid, pname)) => Ok((Some(pid), wid, pname)),
+            None => Ok((None, None, None)),
         }
     }
 

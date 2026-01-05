@@ -124,4 +124,43 @@ impl AiService {
             .map(|s| s as u32)
             .context("JSON missing estimated_seconds field")
     }
+
+    /// Classify context into a semantic category
+    pub async fn classify_context(&self, context: &str) -> Result<ClassificationResponse> {
+        let prompt = format!(
+            "Analyze the following user activity context and classify it.\n\
+             Context:\n\
+             {}\n\
+             \n\
+             Return a JSON object with this exact format:\n\
+             {{\n\
+               \"category\": \"Coding\",\n\
+               \"description\": \"Refactoring authentication logic\",\n\
+               \"tags\": [\"Rust\", \"Auth\"]\n\
+             }}\n\
+             Categories options: Coding, Debugging, Planning, Meeting, Communication, Writing, Learning, Other.\n\
+             Keep description concise (under 10 words).\n\
+             Do not include markdown formatting like ```json.",
+            context
+        );
+
+        let response = self.provider.generate(&prompt).await?;
+        
+        let clean = response
+            .trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```");
+
+        serde_json::from_str(clean)
+            .context(format!("Failed to parse JSON from AI response: {}", response))
+    }
+}
+
+/// Semantic classification response
+#[derive(Debug, serde::Deserialize)]
+pub struct ClassificationResponse {
+    pub category: String,
+    pub description: String,
+    pub tags: Vec<String>,
 }

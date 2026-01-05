@@ -35,10 +35,7 @@ pub use time_estimator::{
     EstimationMethod, SimilarIssue, TimeBreakdown, TimeEstimate, TimeEstimator,
 };
 pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};
-pub use time_estimator::{
-    EstimationMethod, SimilarIssue, TimeBreakdown, TimeEstimate, TimeEstimator,
-};
-pub use work_summary::{ProjectWorkSummary, SummaryPeriod, WorkSummary, WorkSummaryGenerator};
 
 pub use ai_provider::{create_provider, AiProviderTrait};
-pub use ai_service::AiService;
+pub use ai_service::{AiService, ClassificationResponse};
+

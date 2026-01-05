@@ -1,3 +1,4 @@
+pub mod ai_classifier;
 pub mod classifier;
 pub mod config;
 pub mod context_collector;

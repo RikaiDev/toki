@@ -41,7 +41,7 @@ pub fn create_provider(config: &AiConfig) -> Result<Box<dyn AiProviderTrait>> {
             Ok(Box::new(OpenAiProvider::new(
                 &api_key,
                 model,
-                base_url,
+                Some(base_url),
             )))
         }
         AiProvider::Anthropic => {
@@ -53,7 +53,7 @@ pub fn create_provider(config: &AiConfig) -> Result<Box<dyn AiProviderTrait>> {
         }
         AiProvider::Ollama => {
             Ok(Box::new(OllamaProvider::new(
-                base_url,
+                Some(base_url),
                 model,
             )))
         }
