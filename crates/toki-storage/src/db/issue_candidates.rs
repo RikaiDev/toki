@@ -246,12 +246,15 @@ impl Database {
             )
         });
 
-        // Parse complexity from integer
+        // Parse complexity from integer (safely cast i32 -> u8)
         let complexity_value: Option<i32> = row.get(13)?;
-        let complexity = complexity_value.and_then(|v| Complexity::from_points(v as u8));
+        let complexity =
+            complexity_value.and_then(|v| u8::try_from(v).ok().and_then(Complexity::from_points));
 
-        // Parse estimate fields
-        let estimated_seconds: Option<u32> = row.get::<_, Option<i64>>(15)?.map(|v| v as u32);
+        // Parse estimate fields (safely cast i64 -> u32, clamping to valid range)
+        let estimated_seconds: Option<u32> = row
+            .get::<_, Option<i64>>(15)?
+            .map(|v| u32::try_from(v.max(0)).unwrap_or(u32::MAX));
         let estimate_source: Option<String> = row.get(16)?;
 
         Ok(IssueCandidate {

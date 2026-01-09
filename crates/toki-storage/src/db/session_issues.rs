@@ -134,7 +134,7 @@ impl Database {
             "DELETE FROM session_issues WHERE session_id = ?1",
             params![session_id.to_string()],
         )?;
-        Ok(deleted as u32)
+        Ok(u32::try_from(deleted).unwrap_or(u32::MAX))
     }
 
     /// Delete a specific session-issue link
@@ -206,7 +206,7 @@ impl Database {
             |row| row.get(0),
         )?;
 
-        Ok(total.unwrap_or(0) as u32)
+        Ok(u32::try_from(total.unwrap_or(0).max(0)).unwrap_or(u32::MAX))
     }
 
     /// Get time statistics for issues with historical data
@@ -243,7 +243,7 @@ impl Database {
                     issue_id: row.get(0)?,
                     issue_system: row.get(1)?,
                     session_count: row.get(2)?,
-                    total_seconds: row.get::<_, i64>(3)? as u32,
+                    total_seconds: u32::try_from(row.get::<_, i64>(3)?.max(0)).unwrap_or(u32::MAX),
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

@@ -168,7 +168,7 @@ impl Database {
             "DELETE FROM session_outcomes WHERE session_id = ?1",
             params![session_id.to_string()],
         )?;
-        Ok(deleted as u32)
+        Ok(u32::try_from(deleted).unwrap_or(u32::MAX))
     }
 
     /// Helper function to parse `SessionOutcome` from database row
