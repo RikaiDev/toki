@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
+use crate::http::ResponseExt;
 use super::schema::{PropertyMapping, PropertyMappingConfig, NOTION_API_VERSION, NOTION_BASE_URL, RATE_LIMIT_INTERVAL_MS, TIME_CONVENTIONS};
 use super::types::{
     NotionBlock, NotionDatabase, NotionIssueCandidateData, NotionPage,
@@ -129,13 +130,9 @@ impl NotionClient {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Failed to send request to Notion API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Notion API error ({status}): {body}");
-        }
+            .context("Failed to send request to Notion API")?
+            .ensure_success("Notion")
+            .await?;
 
         response
             .json()
@@ -162,13 +159,9 @@ impl NotionClient {
             .json(body)
             .send()
             .await
-            .context("Failed to send request to Notion API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Notion API error ({status}): {body}");
-        }
+            .context("Failed to send request to Notion API")?
+            .ensure_success("Notion")
+            .await?;
 
         response
             .json()
@@ -195,13 +188,9 @@ impl NotionClient {
             .json(body)
             .send()
             .await
-            .context("Failed to send request to Notion API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Notion API error ({status}): {body}");
-        }
+            .context("Failed to send request to Notion API")?
+            .ensure_success("Notion")
+            .await?;
 
         response
             .json()

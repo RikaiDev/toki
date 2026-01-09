@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::http::ResponseExt;
 use crate::traits::{ProjectManagementSystem, SyncReport, TimeEntry, WorkItemDetails};
 
 // ============================================================================
@@ -181,13 +182,9 @@ impl PlaneClient {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .context("Failed to send request to Plane API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Plane API error ({status}): {body}");
-        }
+            .context("Failed to send request to Plane API")?
+            .ensure_success("Plane")
+            .await?;
 
         response
             .json()
@@ -211,13 +208,9 @@ impl PlaneClient {
             .json(body)
             .send()
             .await
-            .context("Failed to send request to Plane API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Plane API error ({status}): {body}");
-        }
+            .context("Failed to send request to Plane API")?
+            .ensure_success("Plane")
+            .await?;
 
         response
             .json()
@@ -339,13 +332,9 @@ impl PlaneClient {
             .query(&[("search", query)])
             .send()
             .await
-            .context("Failed to send request to Plane API")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            anyhow::bail!("Plane API error ({status}): {body}");
-        }
+            .context("Failed to send request to Plane API")?
+            .ensure_success("Plane")
+            .await?;
 
         let paginated: PaginatedResponse<PlaneWorkItem> = response
             .json()

@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 
+use crate::http::ResponseExt;
 use crate::traits::{
     CreateIssueRequest, CreatedIssue, IssueDetails, IssueManagement, IssueState,
     ProjectManagementSystem, SyncReport, TimeEntry, UpdateIssueRequest, WorkItemDetails,
@@ -258,19 +259,14 @@ impl GitLabClient {
 
         log::debug!("Adding spent time to GitLab issue {}: {:?}", issue_iid, request);
 
-        let response = self
-            .client
+        self.client
             .post(&url)
             .json(&request)
             .send()
             .await
-            .context("Failed to send add spent time request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send add spent time request")?
+            .ensure_success("GitLab")
+            .await?;
 
         // Optionally add a note with the summary
         if let Some(desc) = summary {
@@ -316,13 +312,9 @@ impl GitLabClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send get time stats request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send get time stats request")?
+            .ensure_success("GitLab")
+            .await?;
 
         response
             .json()
@@ -347,19 +339,14 @@ impl GitLabClient {
         let duration = Self::seconds_to_duration(duration_seconds);
         let request = GitLabTimeEstimateRequest { duration };
 
-        let response = self
-            .client
+        self.client
             .post(&url)
             .json(&request)
             .send()
             .await
-            .context("Failed to send set time estimate request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send set time estimate request")?
+            .ensure_success("GitLab")
+            .await?;
 
         Ok(())
     }
@@ -376,19 +363,14 @@ impl GitLabClient {
             body: &'a str,
         }
 
-        let response = self
-            .client
+        self.client
             .post(&url)
             .json(&NoteRequest { body })
             .send()
             .await
-            .context("Failed to send add note request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send add note request")?
+            .ensure_success("GitLab")
+            .await?;
 
         Ok(())
     }
@@ -434,13 +416,9 @@ impl IssueManagement for GitLabClient {
             .json(&gitlab_request)
             .send()
             .await
-            .context("Failed to send create issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send create issue request")?
+            .ensure_success("GitLab")
+            .await?;
 
         let issue: GitLabIssue = response
             .json()
@@ -471,19 +449,14 @@ impl IssueManagement for GitLabClient {
             milestone_id: update.milestone.as_ref().and_then(|m| m.parse().ok()),
         };
 
-        let response = self
-            .client
+        self.client
             .put(&url)
             .json(&gitlab_update)
             .send()
             .await
-            .context("Failed to send update issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send update issue request")?
+            .ensure_success("GitLab")
+            .await?;
 
         Ok(())
     }
@@ -496,13 +469,9 @@ impl IssueManagement for GitLabClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send get issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send get issue request")?
+            .ensure_success("GitLab")
+            .await?;
 
         let issue: GitLabIssue = response
             .json()
@@ -524,13 +493,9 @@ impl IssueManagement for GitLabClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send search request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send search request")?
+            .ensure_success("GitLab")
+            .await?;
 
         let issues: Vec<GitLabIssue> = response
             .json()
@@ -554,13 +519,9 @@ impl IssueManagement for GitLabClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send list issues request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitLab API error ({status}): {error_text}");
-        }
+            .context("Failed to send list issues request")?
+            .ensure_success("GitLab")
+            .await?;
 
         let issues: Vec<GitLabIssue> = response
             .json()

@@ -1,9 +1,12 @@
 pub mod github;
 pub mod gitlab;
+mod http;
 pub mod notion;
 pub mod plane;
 pub mod traits;
 pub mod webhook;
+
+pub use http::ResponseExt;
 
 pub use github::GitHubClient;
 pub use gitlab::GitLabClient;

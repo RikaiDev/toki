@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 
+use crate::http::ResponseExt;
 use crate::traits::{
     CreateIssueRequest, CreatedIssue, IssueDetails, IssueManagement, IssueState,
     UpdateIssueRequest,
@@ -217,13 +218,9 @@ impl IssueManagement for GitHubClient {
             .json(&github_request)
             .send()
             .await
-            .context("Failed to send create issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error ({status}): {error_text}");
-        }
+            .context("Failed to send create issue request")?
+            .ensure_success("GitHub")
+            .await?;
 
         let issue: GitHubIssue = response
             .json()
@@ -248,19 +245,14 @@ impl IssueManagement for GitHubClient {
             milestone: update.milestone.as_ref().and_then(|m| m.parse().ok()),
         };
 
-        let response = self
-            .client
+        self.client
             .patch(&url)
             .json(&github_update)
             .send()
             .await
-            .context("Failed to send update issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error ({status}): {error_text}");
-        }
+            .context("Failed to send update issue request")?
+            .ensure_success("GitHub")
+            .await?;
 
         Ok(())
     }
@@ -273,13 +265,9 @@ impl IssueManagement for GitHubClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send get issue request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error ({status}): {error_text}");
-        }
+            .context("Failed to send get issue request")?
+            .ensure_success("GitHub")
+            .await?;
 
         let issue: GitHubIssue = response
             .json()
@@ -303,13 +291,9 @@ impl IssueManagement for GitHubClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send search request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error ({status}): {error_text}");
-        }
+            .context("Failed to send search request")?
+            .ensure_success("GitHub")
+            .await?;
 
         let search_response: GitHubSearchResponse = response
             .json()
@@ -337,13 +321,9 @@ impl IssueManagement for GitHubClient {
             .get(&url)
             .send()
             .await
-            .context("Failed to send list issues request")?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("GitHub API error ({status}): {error_text}");
-        }
+            .context("Failed to send list issues request")?
+            .ensure_success("GitHub")
+            .await?;
 
         let issues: Vec<GitHubIssue> = response
             .json()
