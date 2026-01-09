@@ -1168,9 +1168,9 @@ pub enum AiProvider {
 }
 
 impl AiProvider {
-    /// Parse from string (case-insensitive)
+    /// Parse provider from string (case-insensitive)
     #[must_use]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_provider(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "google" | "gemini" | "genai" => Some(Self::Google),
             "openai" | "gpt" => Some(Self::OpenAi),

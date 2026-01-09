@@ -23,7 +23,7 @@ pub fn get_ai_config(conn: &Connection) -> Result<AiConfig> {
 
     match result {
         Ok((provider_str, model, api_key, base_url, enabled)) => {
-            let provider = AiProvider::from_str(&provider_str).unwrap_or_default();
+            let provider = AiProvider::parse_provider(&provider_str).unwrap_or_default();
             Ok(AiConfig {
                 provider,
                 model,

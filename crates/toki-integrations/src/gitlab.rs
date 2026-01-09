@@ -278,7 +278,7 @@ impl GitLabClient {
                 .add_note(
                     issue_iid,
                     &format!(
-                        "⏱️ Time logged: {} - {}",
+                        "Time logged: {} - {}",
                         Self::seconds_to_duration(duration_seconds),
                         desc
                     ),
