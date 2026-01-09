@@ -11,7 +11,7 @@ use toki_storage::Database;
 
 #[derive(Subcommand, Debug)]
 pub enum SessionAction {
-    /// Start a new Claude Code session (called by SessionStart hook)
+    /// Start a new Claude Code session (called by `SessionStart` hook)
     Start {
         /// Claude Code session ID
         #[arg(long)]
@@ -20,12 +20,12 @@ pub enum SessionAction {
         #[arg(long)]
         project: Option<String>,
     },
-    /// End a Claude Code session (called by SessionEnd hook)
+    /// End a Claude Code session (called by `SessionEnd` hook)
     End {
         /// Claude Code session ID
         #[arg(long)]
         id: String,
-        /// Reason for ending (clear, logout, prompt_input_exit, other)
+        /// Reason for ending (clear, logout, `prompt_input_exit`, other)
         #[arg(long)]
         reason: Option<String>,
     },
@@ -50,7 +50,7 @@ pub enum SessionAction {
         /// Claude Code session ID
         #[arg(long)]
         id: String,
-        /// Outcome type: commit, issue_closed, pr_merged, pr_created, files_changed
+        /// Outcome type: commit, `issue_closed`, `pr_merged`, `pr_created`, `files_changed`
         #[arg(long, value_name = "TYPE")]
         outcome_type: String,
         /// Reference ID (commit hash, issue number, PR number)
@@ -71,7 +71,7 @@ pub enum SessionAction {
         /// Issue tracking system (github, notion, plane, jira, linear)
         #[arg(long, default_value = "github")]
         system: String,
-        /// Relationship type: worked_on, closed, referenced
+        /// Relationship type: `worked_on`, closed, referenced
         #[arg(long, default_value = "worked_on")]
         relationship: String,
     },
@@ -118,7 +118,7 @@ fn start_session(session_id: &str, project_path: Option<&str>) -> Result<()> {
     if let Some(existing) = db.get_claude_session(session_id)? {
         if existing.is_active() {
             // Session already active, just return success
-            println!("Session {} already active", session_id);
+            println!("Session {session_id} already active");
             return Ok(());
         }
     }
@@ -142,23 +142,23 @@ fn end_session(session_id: &str, reason: Option<&str>) -> Result<()> {
     // Check if session exists
     let session = db.get_claude_session(session_id)?;
     if session.is_none() {
-        println!("Session {} not found", session_id);
+        println!("Session {session_id} not found");
         return Ok(());
     }
 
     let session = session.unwrap();
     if !session.is_active() {
-        println!("Session {} already ended", session_id);
+        println!("Session {session_id} already ended");
         return Ok(());
     }
 
     db.end_claude_session(session_id, reason)?;
 
     let duration = session.duration_seconds();
-    println!("Ended session: {}", session_id);
+    println!("Ended session: {session_id}");
     println!("Duration: {}", format_duration(duration));
     if let Some(r) = reason {
-        println!("Reason: {}", r);
+        println!("Reason: {r}");
     }
 
     Ok(())
@@ -186,7 +186,7 @@ fn list_sessions(today: bool, days: u32) -> Result<()> {
         if today {
             "today".to_string()
         } else {
-            format!("last {} days", days)
+            format!("last {days} days")
         }
     );
 
@@ -199,16 +199,14 @@ fn list_sessions(today: bool, days: u32) -> Result<()> {
         let status = if session.is_active() { "[ACTIVE]" } else { "" };
         let project_name = session
             .project_id
-            .and_then(|pid| db.get_project(pid).ok().flatten())
-            .map(|p| p.name)
-            .unwrap_or_else(|| "-".to_string());
+            .and_then(|pid| db.get_project(pid).ok().flatten()).map_or_else(|| "-".to_string(), |p| p.name);
 
         // Get outcome summary for this session
         let outcome_summary = db.get_session_outcome_summary(session.id).unwrap_or_default();
         let outcomes_str = if outcome_summary.is_empty() {
             String::new()
         } else {
-            format!(" | {}", outcome_summary)
+            format!(" | {outcome_summary}")
         };
 
         println!(
@@ -239,25 +237,23 @@ fn show_session(session_id: &str) -> Result<()> {
 
     let session = db
         .get_claude_session(session_id)?
-        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
 
     let project_name = session
         .project_id
-        .and_then(|pid| db.get_project(pid).ok().flatten())
-        .map(|p| p.name)
-        .unwrap_or_else(|| "-".to_string());
+        .and_then(|pid| db.get_project(pid).ok().flatten()).map_or_else(|| "-".to_string(), |p| p.name);
 
     println!("Session Details\n");
     println!("ID:         {}", session.session_id);
     println!("Status:     {}", if session.is_active() { "Active" } else { "Ended" });
-    println!("Project:    {}", project_name);
+    println!("Project:    {project_name}");
     println!("Started:    {}", session.started_at.format("%Y-%m-%d %H:%M:%S"));
     if let Some(ended) = session.ended_at {
         println!("Ended:      {}", ended.format("%Y-%m-%d %H:%M:%S"));
     }
     println!("Duration:   {}", format_duration(session.duration_seconds()));
     if let Some(reason) = &session.end_reason {
-        println!("End Reason: {}", reason);
+        println!("End Reason: {reason}");
     }
     println!("Tool Calls: {}", session.tool_calls);
     println!("Prompts:    {}", session.prompt_count);
@@ -279,17 +275,17 @@ fn show_session(session_id: &str) -> Result<()> {
             let ref_str = outcome
                 .reference_id
                 .as_ref()
-                .map(|r| format!(" ({})", r))
+                .map(|r| format!(" ({r})"))
                 .unwrap_or_default();
             let desc_str = outcome
                 .description
                 .as_ref()
-                .map(|d| format!(" - {}", d))
+                .map(|d| format!(" - {d}"))
                 .unwrap_or_default();
             println!("  {} {}{}{}", outcome.created_at.format("%H:%M"), outcome.outcome_type, ref_str, desc_str);
         }
         let summary = OutcomeSummary::from_outcomes(&outcomes);
-        println!("\nSummary: {}", summary);
+        println!("\nSummary: {summary}");
     }
 
     Ok(())
@@ -312,9 +308,7 @@ fn list_active_sessions() -> Result<()> {
         let duration = session.duration_seconds();
         let project_name = session
             .project_id
-            .and_then(|pid| db.get_project(pid).ok().flatten())
-            .map(|p| p.name)
-            .unwrap_or_else(|| "-".to_string());
+            .and_then(|pid| db.get_project(pid).ok().flatten()).map_or_else(|| "-".to_string(), |p| p.name);
 
         println!(
             "  {} (running for {})",
@@ -345,7 +339,7 @@ fn add_outcome(
     // Find the session
     let session = db
         .get_claude_session(session_id)?
-        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
 
     // Parse outcome type
     let otype: OutcomeType = outcome_type
@@ -355,7 +349,7 @@ fn add_outcome(
     // Check for duplicate
     if let Some(ref_id) = reference {
         if db.outcome_exists(session.id, &otype, ref_id)? {
-            println!("Outcome already recorded: {} ({})", otype, ref_id);
+            println!("Outcome already recorded: {otype} ({ref_id})");
             return Ok(());
         }
     }
@@ -374,7 +368,7 @@ fn add_outcome(
         "Added outcome to session {}: {}{}",
         truncate_id(session_id),
         otype,
-        reference.map(|r| format!(" ({})", r)).unwrap_or_default()
+        reference.map(|r| format!(" ({r})")).unwrap_or_default()
     );
 
     Ok(())
@@ -392,7 +386,7 @@ fn link_issue(
     // Find the session
     let session = db
         .get_claude_session(session_id)?
-        .ok_or_else(|| anyhow::anyhow!("Session not found: {}", session_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Session not found: {session_id}"))?;
 
     // Parse relationship type
     let rel: IssueRelationship = relationship
@@ -404,8 +398,7 @@ fn link_issue(
         // Update relationship if it's an upgrade (e.g., worked_on -> closed)
         db.update_session_issue_relationship(session.id, issue_id, issue_system, &rel)?;
         println!(
-            "Updated issue link: {}#{} [{}]",
-            issue_system, issue_id, rel
+            "Updated issue link: {issue_system}#{issue_id} [{rel}]"
         );
         return Ok(());
     }
@@ -438,11 +431,11 @@ fn format_duration(seconds: u32) -> String {
     let secs = seconds % 60;
 
     if hours > 0 {
-        format!("{}h {}m", hours, minutes)
+        format!("{hours}h {minutes}m")
     } else if minutes > 0 {
-        format!("{}m {}s", minutes, secs)
+        format!("{minutes}m {secs}s")
     } else {
-        format!("{}s", secs)
+        format!("{secs}s")
     }
 }
 

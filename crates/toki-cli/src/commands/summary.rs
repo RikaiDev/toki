@@ -100,7 +100,7 @@ fn generate_project_summary(name_or_path: &str, period: &str, format: &str) -> R
     let project = db
         .get_project_by_name(name_or_path)?
         .or_else(|| db.get_project_by_path(name_or_path).ok().flatten())
-        .ok_or_else(|| anyhow::anyhow!("Project not found: {}", name_or_path))?;
+        .ok_or_else(|| anyhow::anyhow!("Project not found: {name_or_path}"))?;
 
     let period = match period.to_lowercase().as_str() {
         "today" => SummaryPeriod::Today,
@@ -108,7 +108,7 @@ fn generate_project_summary(name_or_path: &str, period: &str, format: &str) -> R
         "week" => SummaryPeriod::Week,
         "month" => SummaryPeriod::Month,
         _ => {
-            eprintln!("Unknown period '{}', using 'today'", period);
+            eprintln!("Unknown period '{period}', using 'today'");
             SummaryPeriod::Today
         }
     };
@@ -132,7 +132,7 @@ fn output_summary(summary: &toki_ai::WorkSummary, format: &str) {
         "markdown" | "md" => {
             println!("{}", summary.generate_text());
         }
-        "text" | _ => {
+        _ => {
             // Plain text version (strip markdown formatting)
             let md = summary.generate_text();
             let plain = md
@@ -144,7 +144,7 @@ fn output_summary(summary: &toki_ai::WorkSummary, format: &str) {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            println!("{}", plain);
+            println!("{plain}");
         }
     }
 }

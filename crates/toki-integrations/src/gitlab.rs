@@ -257,7 +257,7 @@ impl GitLabClient {
         let duration = Self::seconds_to_duration(duration_seconds);
         let request = GitLabAddSpentTimeRequest { duration };
 
-        log::debug!("Adding spent time to GitLab issue {}: {:?}", issue_iid, request);
+        log::debug!("Adding spent time to GitLab issue {issue_iid}: {request:?}");
 
         self.client
             .post(&url)

@@ -32,7 +32,7 @@ pub struct TimeEstimate {
 
 impl TimeEstimate {
     /// Format duration in human-readable form
-    pub fn format_duration(seconds: u32) -> String {
+    #[must_use] pub fn format_duration(seconds: u32) -> String {
         let hours = seconds / 3600;
         let minutes = (seconds % 3600) / 60;
 
@@ -118,7 +118,7 @@ impl std::fmt::Display for EstimationMethod {
             Self::SimilarIssues => write!(f, "Similar issues"),
             Self::ComplexityBased => write!(f, "Complexity-based"),
             Self::Combined => write!(f, "Combined analysis"),
-            Self::AiRag(model) => write!(f, "AI Estimation ({})", model),
+            Self::AiRag(model) => write!(f, "AI Estimation ({model})"),
         }
     }
 }

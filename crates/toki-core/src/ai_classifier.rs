@@ -16,17 +16,17 @@ pub struct ContextSnapshot {
 }
 
 impl ContextSnapshot {
-    pub fn to_prompt_text(&self) -> String {
+    #[must_use] pub fn to_prompt_text(&self) -> String {
         let mut text = String::new();
         text.push_str(&format!("App: {}\n", self.app_id));
         if let Some(title) = &self.window_title {
-            text.push_str(&format!("Window Title: {}\n", title));
+            text.push_str(&format!("Window Title: {title}\n"));
         }
         if let Some(branch) = &self.git_branch {
-            text.push_str(&format!("Git Branch: {}\n", branch));
+            text.push_str(&format!("Git Branch: {branch}\n"));
         }
         if let Some(project) = &self.project_name {
-            text.push_str(&format!("Project: {}\n", project));
+            text.push_str(&format!("Project: {project}\n"));
         }
         text
     }
@@ -39,7 +39,7 @@ pub struct AiClassifier {
 }
 
 impl AiClassifier {
-    pub fn new(ai_service: Arc<AiService>, cache_size: usize) -> Self {
+    #[must_use] pub fn new(ai_service: Arc<AiService>, cache_size: usize) -> Self {
         let cache_size = NonZeroUsize::new(cache_size).unwrap_or(NonZeroUsize::new(100).unwrap());
         Self {
             ai_service,

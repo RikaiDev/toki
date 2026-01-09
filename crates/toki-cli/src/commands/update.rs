@@ -91,7 +91,7 @@ pub fn handle_update_command(check_only: bool) -> Result<()> {
     if !extracted_binary.exists() {
         // Try looking in subdirectory
         let entries: Vec<_> = fs::read_dir(temp_dir.path())?
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         for entry in entries {

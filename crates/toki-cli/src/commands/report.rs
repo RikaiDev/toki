@@ -83,7 +83,7 @@ fn handle_time_report(
     let total_time: u32 = category_time.values().sum();
 
     println!("\nTime Tracking Report: {period}");
-    println!("{}", "═".repeat(28));
+    println!("{}", "\u{2550}".repeat(28));
 
     let mut stats: Vec<CategoryStats> = category_time
         .into_iter()
@@ -149,9 +149,7 @@ fn handle_outcome_report(
         if !summary.is_empty() {
             let project_name = session
                 .project_id
-                .and_then(|pid| db.get_project(pid).ok().flatten())
-                .map(|p| p.name)
-                .unwrap_or_else(|| "-".to_string());
+                .and_then(|pid| db.get_project(pid).ok().flatten()).map_or_else(|| "-".to_string(), |p| p.name);
 
             session_rows.push(SessionOutcomeRow {
                 session: truncate_id(&session.session_id),
@@ -163,7 +161,7 @@ fn handle_outcome_report(
     }
 
     println!("\nOutcome Report: {period}");
-    println!("{}", "═".repeat(28));
+    println!("{}", "\u{2550}".repeat(28));
 
     // Summary section
     println!("\nSummary:");
@@ -193,9 +191,9 @@ fn format_duration(seconds: u32) -> String {
     let minutes = (seconds % 3600) / 60;
 
     if hours > 0 {
-        format!("{}h {}m", hours, minutes)
+        format!("{hours}h {minutes}m")
     } else {
-        format!("{}m", minutes)
+        format!("{minutes}m")
     }
 }
 

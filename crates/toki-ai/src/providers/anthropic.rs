@@ -13,7 +13,7 @@ pub struct AnthropicProvider {
 }
 
 impl AnthropicProvider {
-    pub fn new(api_key: &str, model: &str) -> Self {
+    #[must_use] pub fn new(api_key: &str, model: &str) -> Self {
         Self {
             client: Client::new(),
             api_key: api_key.to_string(),
@@ -52,7 +52,7 @@ impl AiProviderTrait for AnthropicProvider {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Anthropic API error: {}", error_text);
+            anyhow::bail!("Anthropic API error: {error_text}");
         }
 
         let json: serde_json::Value = response
@@ -63,7 +63,7 @@ impl AiProviderTrait for AnthropicProvider {
         // Extract text from: content[0].text
         json["content"][0]["text"]
             .as_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .context("Failed to extract text from Anthropic response")
     }
 }

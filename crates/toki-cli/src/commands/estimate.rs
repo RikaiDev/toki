@@ -27,8 +27,7 @@ pub async fn handle_estimate_command(
         .or_else(|| db.get_issue_candidate_by_external_id(issue_id).ok().flatten())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Issue {} not found. Try running 'toki issue-sync' first.",
-                issue_id
+                "Issue {issue_id} not found. Try running 'toki issue-sync' first."
             )
         })?;
 
@@ -79,7 +78,7 @@ pub async fn handle_estimate_command(
 
     // Time estimation
     println!("Time Estimation");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
 
     // Initialize AI service
     let ai_service = match db.get_ai_config() {
@@ -88,7 +87,7 @@ pub async fn handle_estimate_command(
                 match AiService::new(config) {
                     Ok(service) => Some(service),
                     Err(e) => {
-                        log::warn!("Failed to initialize AI service: {}", e);
+                        log::warn!("Failed to initialize AI service: {e}");
                         None
                     }
                 }
@@ -175,7 +174,7 @@ fn print_breakdown(breakdown: &TimeBreakdown) {
 /// Estimate complexity based on issue metadata using heuristics
 fn estimate_complexity(title: &str, description: Option<&str>, labels: &[String]) -> (Complexity, String) {
     let title_lower = title.to_lowercase();
-    let desc_lower = description.map(|d| d.to_lowercase()).unwrap_or_default();
+    let desc_lower = description.map(str::to_lowercase).unwrap_or_default();
     let labels_lower: Vec<String> = labels.iter().map(|l| l.to_lowercase()).collect();
 
     // Check for explicit complexity labels first
@@ -266,7 +265,7 @@ fn estimate_complexity(title: &str, description: Option<&str>, labels: &[String]
     }
 
     // Length-based heuristics
-    let desc_len = description.map(|d| d.len()).unwrap_or(0);
+    let desc_len = description.map_or(0, str::len);
     if desc_len > 1000 {
         score += 1;
         reasons.push("detailed requirements suggest complexity");

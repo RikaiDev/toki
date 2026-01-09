@@ -17,7 +17,7 @@ impl Database {
             .embedding
             .as_ref()
             .map(|e| e.iter().flat_map(|f| f.to_le_bytes()).collect());
-        let complexity_value: Option<i32> = candidate.complexity.map(|c| c.points() as i32);
+        let complexity_value: Option<i32> = candidate.complexity.map(|c| i32::from(c.points()));
 
         self.conn.execute(
             "INSERT INTO issue_candidates
@@ -149,7 +149,7 @@ impl Database {
         Ok(result)
     }
 
-    /// Get an issue candidate by external_id (any system)
+    /// Get an issue candidate by `external_id` (any system)
     ///
     /// # Errors
     ///
@@ -197,7 +197,7 @@ impl Database {
 
     /// Get all Notion issue candidates with their page IDs
     ///
-    /// Returns a map of external_id -> source_page_id for populating the NotionClient cache
+    /// Returns a map of `external_id` -> `source_page_id` for populating the `NotionClient` cache
     ///
     /// # Errors
     ///
@@ -292,7 +292,7 @@ impl Database {
         let updated = self.conn.execute(
             "UPDATE issue_candidates SET complexity = ?1, complexity_reason = ?2
              WHERE external_id = ?3 AND external_system = ?4",
-            params![complexity.points() as i32, reason, external_id, external_system],
+            params![i32::from(complexity.points()), reason, external_id, external_system],
         )?;
         Ok(updated > 0)
     }
@@ -312,7 +312,7 @@ impl Database {
         let updated = self.conn.execute(
             "UPDATE issue_candidates SET estimated_seconds = ?1, estimate_source = ?2
              WHERE external_id = ?3 AND external_system = ?4",
-            params![estimated_seconds as i64, source, external_id, external_system],
+            params![i64::from(estimated_seconds), source, external_id, external_system],
         )?;
         Ok(updated > 0)
     }

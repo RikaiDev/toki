@@ -137,7 +137,7 @@ impl GitDetector {
         revwalk.push_head()?;
 
         let mut messages = Vec::new();
-        for oid in revwalk.take(count).filter_map(|r| r.ok()) {
+        for oid in revwalk.take(count).filter_map(std::result::Result::ok) {
             if let Ok(commit) = repo.find_commit(oid) {
                 if let Some(msg) = commit.message() {
                     // Take first line only

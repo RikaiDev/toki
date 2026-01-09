@@ -181,8 +181,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
                     let db_title = notion_db
                         .title
                         .first()
-                        .map(|t| t.plain_text.as_str())
-                        .unwrap_or("Untitled");
+                        .map_or("Untitled", |t| t.plain_text.as_str());
 
                     // Link the project
                     db.link_project_to_pm(local_project.id, "notion", &db_id, None)?;

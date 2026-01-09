@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::ai_provider::AiProviderTrait;
 
-/// Google GenAI (Gemini) Provider
+/// Google `GenAI` (Gemini) Provider
 pub struct GoogleGenAiProvider {
     client: Client,
     api_key: String,
@@ -13,7 +13,7 @@ pub struct GoogleGenAiProvider {
 }
 
 impl GoogleGenAiProvider {
-    pub fn new(api_key: &str, model: &str) -> Self {
+    #[must_use] pub fn new(api_key: &str, model: &str) -> Self {
         Self {
             client: Client::new(),
             api_key: api_key.to_string(),
@@ -52,7 +52,7 @@ impl AiProviderTrait for GoogleGenAiProvider {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Google AI API error: {}", error_text);
+            anyhow::bail!("Google AI API error: {error_text}");
         }
 
         let json: serde_json::Value = response
@@ -63,7 +63,7 @@ impl AiProviderTrait for GoogleGenAiProvider {
         // Extract text from: candidates[0].content.parts[0].text
         json["candidates"][0]["content"]["parts"][0]["text"]
             .as_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .context("Failed to extract text from Google AI response")
     }
 

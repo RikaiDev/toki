@@ -664,7 +664,7 @@ pub struct ClaudeSession {
     pub started_at: DateTime<Utc>,
     /// When the session ended (None if still active)
     pub ended_at: Option<DateTime<Utc>>,
-    /// Reason for ending (clear, logout, prompt_input_exit, other)
+    /// Reason for ending (clear, logout, `prompt_input_exit`, other)
     pub end_reason: Option<String>,
     /// Number of tool calls made during session
     pub tool_calls: u32,
@@ -775,7 +775,7 @@ impl std::str::FromStr for OutcomeType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionOutcome {
     pub id: Uuid,
-    /// Reference to the claude_sessions.id (internal UUID)
+    /// Reference to the `claude_sessions.id` (internal UUID)
     pub session_id: Uuid,
     /// Type of outcome
     pub outcome_type: OutcomeType,
@@ -976,7 +976,7 @@ impl std::str::FromStr for IssueRelationship {
 /// Links a Claude session to an issue/work item
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionIssue {
-    /// Reference to claude_sessions.id (internal UUID)
+    /// Reference to `claude_sessions.id` (internal UUID)
     pub session_id: Uuid,
     /// External issue ID (e.g., "43", "GH-123", "PROJ-456")
     pub issue_id: String,
@@ -1156,10 +1156,10 @@ impl ClassificationRule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum AiProvider {
-    /// Google GenAI (Gemini API) - free tier available
+    /// Google `GenAI` (Gemini API) - free tier available
     #[default]
     Google,
-    /// OpenAI API
+    /// `OpenAI` API
     OpenAi,
     /// Anthropic Claude API
     Anthropic,

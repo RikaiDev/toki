@@ -104,7 +104,7 @@ fn parse_period(period: &str) -> Result<(DateTime<Utc>, DateTime<Utc>)> {
             Ok((start, end))
         }
         _ => {
-            anyhow::bail!("Unknown period: {}. Use 'week', 'month', 'today', or YYYY-MM-DD:YYYY-MM-DD", period);
+            anyhow::bail!("Unknown period: {period}. Use 'week', 'month', 'today', or YYYY-MM-DD:YYYY-MM-DD");
         }
     }
 }
@@ -200,14 +200,14 @@ fn detect_anomalies(current: &ProductivityMetrics, previous: Option<&Productivit
                     description: "Work time increased significantly".to_string(),
                     severity: AnomalySeverity::Info,
                     value: format!("+{:.0}%", change * 100.0),
-                    expected: "±20%".to_string(),
+                    expected: "\u{b1}20%".to_string(),
                 });
             } else if change < -0.5 {
                 anomalies.push(Anomaly {
                     description: "Work time decreased significantly".to_string(),
                     severity: AnomalySeverity::Warning,
                     value: format!("{:.0}%", change * 100.0),
-                    expected: "±20%".to_string(),
+                    expected: "\u{b1}20%".to_string(),
                 });
             }
         }
@@ -220,7 +220,7 @@ fn detect_anomalies(current: &ProductivityMetrics, previous: Option<&Productivit
                     description: "Session count changed significantly".to_string(),
                     severity: AnomalySeverity::Info,
                     value: format!("{:+.0}%", change * 100.0),
-                    expected: "±50%".to_string(),
+                    expected: "\u{b1}50%".to_string(),
                 });
             }
         }
@@ -265,8 +265,7 @@ fn generate_suggestions(metrics: &ProductivityMetrics, anomalies: &[Anomaly]) ->
     if !peak_hours.is_empty() {
         let peak = peak_hours[0].0;
         suggestions.push(format!(
-            "Your most productive hour is {}:00 - consider protecting this time for deep work",
-            peak
+            "Your most productive hour is {peak}:00 - consider protecting this time for deep work"
         ));
     }
 
@@ -313,7 +312,7 @@ pub fn handle_insights_command(
     let period_days = (end - start).num_days();
 
     println!("Productivity Insights");
-    println!("{}", "═".repeat(50));
+    println!("{}", "\u{2550}".repeat(50));
     println!("Period: {} to {}", start.format("%Y-%m-%d"), end.format("%Y-%m-%d"));
     println!();
 
@@ -350,7 +349,7 @@ pub fn handle_insights_command(
             return Ok(());
         }
         Some(f) => {
-            println!("Unknown focus: {}. Use: hours, sessions, context-switches", f);
+            println!("Unknown focus: {f}. Use: hours, sessions, context-switches");
             return Ok(());
         }
         None => {}
@@ -358,7 +357,7 @@ pub fn handle_insights_command(
 
     // Print summary
     println!("Summary");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
     println!("Total time:      {}", format_duration(current_metrics.total_seconds));
     println!("Sessions:        {}", current_metrics.session_count);
     println!("Avg session:     {}", format_duration(current_metrics.avg_session_seconds));
@@ -371,7 +370,7 @@ pub fn handle_insights_command(
         if let Some(ref prev) = previous_metrics {
             println!();
             println!("vs Previous Period");
-            println!("{}", "─".repeat(40));
+            println!("{}", "\u{2500}".repeat(40));
             print_comparison(&current_metrics, prev);
         }
     }
@@ -381,7 +380,7 @@ pub fn handle_insights_command(
     if !anomalies.is_empty() {
         println!();
         println!("Anomalies Detected");
-        println!("{}", "─".repeat(40));
+        println!("{}", "\u{2500}".repeat(40));
         for anomaly in &anomalies {
             let icon = match anomaly.severity {
                 AnomalySeverity::Alert => "!!",
@@ -396,14 +395,14 @@ pub fn handle_insights_command(
     // Print patterns
     println!();
     println!("Patterns");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
 
     let peak_hours = find_peak_hours(&current_metrics);
     if !peak_hours.is_empty() {
         print!("Peak hours: ");
         for (i, (hour, _)) in peak_hours.iter().enumerate() {
             if i > 0 { print!(", "); }
-            print!("{}:00", hour);
+            print!("{hour}:00");
         }
         println!();
     }
@@ -429,7 +428,7 @@ pub fn handle_insights_command(
     if !suggestions.is_empty() {
         println!();
         println!("Suggestions");
-        println!("{}", "─".repeat(40));
+        println!("{}", "\u{2500}".repeat(40));
         for suggestion in &suggestions {
             println!("- {suggestion}");
         }
@@ -441,14 +440,14 @@ pub fn handle_insights_command(
 /// Print hourly analysis
 fn print_hourly_analysis(metrics: &ProductivityMetrics) {
     println!("Hourly Distribution");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
 
     let max_time = *metrics.hourly_distribution.iter().max().unwrap_or(&1);
 
     for (hour, &time) in metrics.hourly_distribution.iter().enumerate() {
         if time > 0 {
             let bar_len = if max_time > 0 { (time as f32 / max_time as f32 * 20.0) as usize } else { 0 };
-            let bar = "█".repeat(bar_len);
+            let bar = "\u{2588}".repeat(bar_len);
             println!("{:02}:00 {} {}", hour, bar, format_duration(time));
         }
     }
@@ -457,7 +456,7 @@ fn print_hourly_analysis(metrics: &ProductivityMetrics) {
 /// Print session analysis
 fn print_session_analysis(metrics: &ProductivityMetrics) {
     println!("Session Analysis");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
     println!("Total sessions:  {}", metrics.session_count);
     println!("Average length:  {}", format_duration(metrics.avg_session_seconds));
     println!("Longest session: {}", format_duration(metrics.longest_session));
@@ -468,20 +467,20 @@ fn print_session_analysis(metrics: &ProductivityMetrics) {
     days.sort_by_key(|(d, _)| *d);
 
     for (date, count) in days {
-        println!("  {}: {} sessions", date, count);
+        println!("  {date}: {count} sessions");
     }
 }
 
 /// Print context switch analysis
 fn print_context_switch_analysis(metrics: &ProductivityMetrics) {
     println!("Context Switch Analysis");
-    println!("{}", "─".repeat(40));
+    println!("{}", "\u{2500}".repeat(40));
     println!("Total switches: {}", metrics.context_switches);
     println!("Projects:       {}", metrics.project_count);
 
     if metrics.session_count > 0 {
         let switch_rate = metrics.context_switches as f32 / metrics.session_count as f32;
-        println!("Switch rate:    {:.2} per session", switch_rate);
+        println!("Switch rate:    {switch_rate:.2} per session");
     }
 
     if metrics.context_switches > 5 {

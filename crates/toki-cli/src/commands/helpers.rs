@@ -43,7 +43,7 @@ mod tests {
     #[test]
     fn test_truncate_str_unicode() {
         // Test with multi-byte UTF-8 characters
-        assert_eq!(truncate_str("你好世界", 2), "你好...");
+        assert_eq!(truncate_str("\u{4f60}\u{597d}\u{4e16}\u{754c}", 2), "\u{4f60}\u{597d}...");
     }
 
     #[test]

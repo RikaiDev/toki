@@ -26,7 +26,7 @@ impl AiService {
     }
 
     /// Get the model name in use
-    pub fn model_name(&self) -> &str {
+    #[must_use] pub fn model_name(&self) -> &str {
         self.provider.model_name()
     }
 
@@ -53,12 +53,11 @@ impl AiService {
     pub async fn analyze_complexity(&self, title: &str, description: &str) -> Result<Complexity> {
         let prompt = format!(
             "Analyze the complexity of the following software engineering task.\n\
-             Task: {}\n\
-             Description: {}\n\
+             Task: {title}\n\
+             Description: {description}\n\
              \n\
              Classify into one of: Trivial, Simple, Moderate, Complex, Epic.\n\
-             Return ONLY the category name.",
-            title, description
+             Return ONLY the category name."
         );
 
         let response = self.provider.generate(&prompt).await?;
@@ -86,7 +85,7 @@ impl AiService {
                  let hours = stat.total_seconds as f32 / 3600.0;
                  context.push_str(&format!("{}. {} took {:.1} hours\n", i+1, stat.issue_id, hours));
             }
-            context.push_str("\n");
+            context.push('\n');
         }
 
         format!(
@@ -117,7 +116,7 @@ impl AiService {
             .trim_end_matches("```");
 
         let json: serde_json::Value = serde_json::from_str(clean)
-            .context(format!("Failed to parse JSON from AI response: {}", response))?;
+            .context(format!("Failed to parse JSON from AI response: {response}"))?;
 
         json["estimated_seconds"]
             .as_u64()
@@ -130,7 +129,7 @@ impl AiService {
         let prompt = format!(
             "Analyze the following user activity context and classify it.\n\
              Context:\n\
-             {}\n\
+             {context}\n\
              \n\
              Return a JSON object with this exact format:\n\
              {{\n\
@@ -140,8 +139,7 @@ impl AiService {
              }}\n\
              Categories options: Coding, Debugging, Planning, Meeting, Communication, Writing, Learning, Other.\n\
              Keep description concise (under 10 words).\n\
-             Do not include markdown formatting like ```json.",
-            context
+             Do not include markdown formatting like ```json."
         );
 
         let response = self.provider.generate(&prompt).await?;
@@ -153,7 +151,7 @@ impl AiService {
             .trim_end_matches("```");
 
         serde_json::from_str(clean)
-            .context(format!("Failed to parse JSON from AI response: {}", response))
+            .context(format!("Failed to parse JSON from AI response: {response}"))
     }
 }
 

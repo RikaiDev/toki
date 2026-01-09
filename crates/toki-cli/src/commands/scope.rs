@@ -44,10 +44,10 @@ impl ScopeHealthStatus {
 
     fn emoji(&self) -> &'static str {
         match self {
-            Self::OnTrack => "✅",
-            Self::Warning => "⚠️",
-            Self::OverEstimate => "🔴",
-            Self::Critical => "🚨",
+            Self::OnTrack => "\u{2705}",
+            Self::Warning => "\u{26a0}\u{fe0f}",
+            Self::OverEstimate => "\u{1f534}",
+            Self::Critical => "\u{1f6a8}",
         }
     }
 
@@ -92,8 +92,7 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
         let actual = time_stats
             .iter()
             .find(|ts| ts.issue_id == issue.external_id && ts.issue_system == issue.external_system)
-            .map(|ts| ts.total_seconds)
-            .unwrap_or(0);
+            .map_or(0, |ts| ts.total_seconds);
 
         let percentage = actual as f32 / estimated as f32;
         let status = ScopeHealthStatus::from_percentage(percentage);
@@ -127,7 +126,7 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
 
     // Print header
     println!("Scope Analysis");
-    println!("══════════════════════════════════════");
+    println!("\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}\u{2550}");
     println!();
 
     // Count by status
@@ -164,16 +163,16 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
     }
 
     // Summary
-    println!("────────────────────────────────────────");
-    println!("✅ On Track: {}  ⚠️  Warning: {}  🔴 Over: {}", on_track, warning, over);
+    println!("\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}");
+    println!("\u{2705} On Track: {on_track}  \u{26a0}\u{fe0f}  Warning: {warning}  \u{1f534} Over: {over}");
 
     // Average overage
     if !scope_statuses.is_empty() {
         let avg_pct: f32 = scope_statuses.iter().map(|s| s.percentage).sum::<f32>() / scope_statuses.len() as f32;
         if avg_pct > 1.0 {
-            println!("📊 Average: {:+.0}% over estimate", (avg_pct - 1.0) * 100.0);
+            println!("\u{1f4ca} Average: {:+.0}% over estimate", (avg_pct - 1.0) * 100.0);
         } else {
-            println!("📊 Average: {:.0}% of estimate", avg_pct * 100.0);
+            println!("\u{1f4ca} Average: {:.0}% of estimate", avg_pct * 100.0);
         }
     }
 
@@ -184,9 +183,9 @@ fn format_duration(seconds: u32) -> String {
     let hours = seconds / 3600;
     let mins = (seconds % 3600) / 60;
     if hours > 0 {
-        format!("{}h {}m", hours, mins)
+        format!("{hours}h {mins}m")
     } else {
-        format!("{}m", mins)
+        format!("{mins}m")
     }
 }
 

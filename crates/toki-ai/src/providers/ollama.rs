@@ -13,7 +13,7 @@ pub struct OllamaProvider {
 }
 
 impl OllamaProvider {
-    pub fn new(base_url: Option<&str>, model: &str) -> Self {
+    #[must_use] pub fn new(base_url: Option<&str>, model: &str) -> Self {
         Self {
             client: Client::new(),
             base_url: base_url
@@ -53,7 +53,7 @@ impl AiProviderTrait for OllamaProvider {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("Ollama API error: {}", error_text);
+            anyhow::bail!("Ollama API error: {error_text}");
         }
 
         let json: serde_json::Value = response
@@ -64,7 +64,7 @@ impl AiProviderTrait for OllamaProvider {
         // Extract text from: message.content
         json["message"]["content"]
             .as_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .context("Failed to extract text from Ollama response")
     }
 

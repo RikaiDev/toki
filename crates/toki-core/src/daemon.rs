@@ -46,7 +46,7 @@ impl Daemon {
                         Some(AiClassifier::new(Arc::new(service), 100))
                     },
                     Err(e) => {
-                        log::warn!("Failed to initialize AI service for classifier: {}", e);
+                        log::warn!("Failed to initialize AI service for classifier: {e}");
                         None
                     }
                 }
@@ -206,7 +206,7 @@ impl Daemon {
                  match ai.classify(snapshot).await {
                      Ok(res) => res.category,
                      Err(e) => {
-                         log::debug!("AI classification skipped/failed: {}", e);
+                         log::debug!("AI classification skipped/failed: {e}");
                          self.classifier.classify_with_context(&app.app_id, window_title.as_deref())
                      }
                  }

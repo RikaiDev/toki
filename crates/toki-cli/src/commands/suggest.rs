@@ -81,9 +81,7 @@ pub fn run(
 
         // Get issue details from database
         let issue_title = db
-            .get_issue_candidate_by_external_id(&suggestion.issue_id)?
-            .map(|c| c.title)
-            .unwrap_or_else(|| "(title not found)".to_string());
+            .get_issue_candidate_by_external_id(&suggestion.issue_id)?.map_or_else(|| "(title not found)".to_string(), |c| c.title);
 
         println!(
             "  {}. {} - {} [{confidence_bar}] {:.0}%",
@@ -127,5 +125,5 @@ fn collect_git_signals(detector: &GitDetector, repo_path: &std::path::Path) -> R
 fn get_confidence_bar(confidence: f32) -> String {
     let filled = (confidence * 10.0).round() as usize;
     let empty = 10 - filled;
-    format!("{}{}", "█".repeat(filled), "░".repeat(empty))
+    format!("{}{}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty))
 }

@@ -83,201 +83,188 @@ struct TaskSuggestion {
     estimated_seconds: u32,
 }
 
-/// Handle the next task suggestion command
-pub async fn handle_next_command(
-    time: Option<&str>,
-    focus: Option<&str>,
-    count: usize,
-) -> Result<()> {
-    let db = Arc::new(Database::new(None).context("Failed to open database")?);
+/// Scoring context for issue evaluation
+struct ScoringContext<'a> {
+    max_time_seconds: Option<u32>,
+    focus_level: FocusLevel,
+    recent_issue_ids: &'a [String],
+    db: &'a Database,
+}
 
-    // Parse constraints
-    let max_time_seconds = time.and_then(parse_time_to_seconds);
-    let focus_level = focus.and_then(FocusLevel::parse).unwrap_or(FocusLevel::Normal);
-
-    // Get all projects
-    let projects = db.get_all_projects()?;
-
-    if projects.is_empty() {
-        println!("No projects found. Run 'toki project auto-link' first.");
-        return Ok(());
+/// Try to create AI service from database config
+fn create_ai_service(db: &Database) -> Option<AiService> {
+    let config = db.get_ai_config().ok()?;
+    if !config.enabled {
+        return None;
     }
+    AiService::new(config)
+        .map_err(|e| log::warn!("Failed to initialize AI service: {e}"))
+        .ok()
+}
 
-    // Collect all active issues across projects
-    let mut all_issues: Vec<IssueCandidate> = Vec::new();
-    for project in &projects {
-        if let Ok(issues) = db.get_active_issue_candidates(project.id) {
-            all_issues.extend(issues);
-        }
-    }
+/// Collect recent issue IDs from sessions
+fn collect_recent_issue_ids(db: &Database) -> Vec<String> {
+    let sessions = db
+        .get_claude_sessions(Utc::now() - Duration::days(7), Utc::now())
+        .unwrap_or_default();
 
-    if all_issues.is_empty() {
-        println!("No open issues found. Run 'toki issue-sync' to sync issues from your PM system.");
-        return Ok(());
-    }
-
-    // Get recent sessions for context
-    let recent_sessions = db.get_claude_sessions(
-        Utc::now() - Duration::days(7),
-        Utc::now(),
-    )?;
-
-    // Get recently worked issues for context continuity
-    let mut recent_issue_ids: Vec<String> = Vec::new();
-    for session in &recent_sessions {
+    let mut recent_ids = Vec::new();
+    for session in &sessions {
         if let Ok(session_issues) = db.get_session_issues(session.id) {
             for si in session_issues {
-                if !recent_issue_ids.contains(&si.issue_id) {
-                    recent_issue_ids.push(si.issue_id);
+                if !recent_ids.contains(&si.issue_id) {
+                    recent_ids.push(si.issue_id);
                 }
             }
         }
     }
+    recent_ids
+}
 
-    // Create time estimator with AI service
-    let ai_service = match db.get_ai_config() {
-        Ok(config) => {
-            if config.enabled {
-                match AiService::new(config) {
-                    Ok(service) => Some(service),
-                    Err(e) => {
-                        log::warn!("Failed to initialize AI service: {}", e);
-                        None
-                    }
-                }
-            } else {
-                None
-            }
+/// Check if issue passes time constraint, returns bonus score if it fits well
+fn check_time_constraint(estimated_seconds: u32, max_seconds: Option<u32>) -> Option<(bool, f32, Option<String>)> {
+    let max = max_seconds?;
+    if estimated_seconds > max {
+        return Some((false, 0.0, None)); // Filter out
+    }
+    let fit_ratio = estimated_seconds as f32 / max as f32;
+    if fit_ratio > 0.5 && fit_ratio <= 1.0 {
+        Some((true, 15.0, Some("fits available time well".to_string())))
+    } else {
+        Some((true, 0.0, None))
+    }
+}
+
+/// Check if issue passes focus level constraint and calculate focus-based score
+fn check_focus_constraint(complexity: Complexity, focus_level: FocusLevel) -> Option<(f32, Option<String>)> {
+    let max_complexity = focus_level.max_complexity();
+    if complexity.points() > max_complexity.points() {
+        return None; // Filter out
+    }
+
+    match focus_level {
+        FocusLevel::Deep if complexity.points() >= 5 => {
+            Some((20.0, Some("good for deep focus".to_string())))
         }
-        Err(_) => None,
+        FocusLevel::Low if complexity.points() <= 2 => {
+            Some((20.0, Some("suitable for low-energy work".to_string())))
+        }
+        FocusLevel::Normal if complexity.points() >= 2 && complexity.points() <= 5 => {
+            Some((10.0, None))
+        }
+        _ => Some((0.0, None)),
+    }
+}
+
+/// Calculate embedding similarity bonus
+fn calculate_embedding_bonus(
+    issue: &IssueCandidate,
+    recent_issue_ids: &[String],
+    db: &Database,
+) -> (f32, Option<String>) {
+    let issue_embedding = match &issue.embedding {
+        Some(e) => e,
+        None => return (0.0, None),
     };
 
-    let estimator = TimeEstimator::new(db.clone(), ai_service);
+    let mut bonus = 0.0f32;
+    let mut reason = None;
 
-    // Score and rank issues
-    let mut suggestions: Vec<TaskSuggestion> = Vec::new();
+    for recent_id in recent_issue_ids {
+        let recent_issue = match db.get_issue_candidate_by_external_id(recent_id) {
+            Ok(Some(i)) => i,
+            _ => continue,
+        };
+        let recent_embedding = match &recent_issue.embedding {
+            Some(e) => e,
+            None => continue,
+        };
 
-    for issue in all_issues {
-        let mut score = 50.0f32; // Base score
-        let mut reasons = Vec::new();
-
-        // Estimate time
-        let time_estimate = estimator.estimate(&issue).await.ok();
-        let estimated_seconds = time_estimate
-            .as_ref()
-            .map(|e| e.estimated_seconds)
-            .unwrap_or(7200); // Default 2 hours
-
-        // Time constraint filter
-        if let Some(max_seconds) = max_time_seconds {
-            if estimated_seconds > max_seconds {
-                continue; // Skip tasks that take too long
-            }
-            // Bonus for tasks that fit well within time budget
-            let fit_ratio = estimated_seconds as f32 / max_seconds as f32;
-            if fit_ratio > 0.5 && fit_ratio <= 1.0 {
-                score += 15.0;
-                reasons.push("fits available time well".to_string());
+        let similarity = cosine_similarity(issue_embedding, recent_embedding);
+        if similarity > 0.7 {
+            bonus += 15.0 * similarity;
+            if reason.is_none() {
+                reason = Some(format!("related to recent #{recent_id}"));
             }
         }
-
-        // Focus level constraint
-        let complexity = issue.complexity.unwrap_or(Complexity::Moderate);
-        let max_complexity = focus_level.max_complexity();
-        if complexity.points() > max_complexity.points() {
-            continue; // Skip tasks too complex for current focus level
-        }
-
-        // Complexity scoring based on focus
-        match focus_level {
-            FocusLevel::Deep => {
-                // Prefer complex tasks for deep focus
-                if complexity.points() >= 5 {
-                    score += 20.0;
-                    reasons.push("good for deep focus".to_string());
-                }
-            }
-            FocusLevel::Low => {
-                // Prefer simple tasks for low focus
-                if complexity.points() <= 2 {
-                    score += 20.0;
-                    reasons.push("suitable for low-energy work".to_string());
-                }
-            }
-            FocusLevel::Normal => {
-                // Balanced preference
-                if complexity.points() >= 2 && complexity.points() <= 5 {
-                    score += 10.0;
-                }
-            }
-        }
-
-        // Context continuity - boost related issues
-        if recent_issue_ids.contains(&issue.external_id) {
-            score += 25.0;
-            reasons.push("continues recent work".to_string());
-        }
-
-        // Check for similar issues in recent work using embeddings
-        if let Some(ref issue_embedding) = issue.embedding {
-            for recent_id in &recent_issue_ids {
-                if let Ok(Some(recent_issue)) = db.get_issue_candidate_by_external_id(recent_id) {
-                    if let Some(ref recent_embedding) = recent_issue.embedding {
-                        let similarity = cosine_similarity(issue_embedding, recent_embedding);
-                        if similarity > 0.7 {
-                            score += 15.0 * similarity;
-                            if !reasons.iter().any(|r| r.contains("related to")) {
-                                reasons.push(format!("related to recent #{}", recent_id));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Priority from labels
-        let labels_lower: Vec<String> = issue.labels.iter().map(|l| l.to_lowercase()).collect();
-        if labels_lower.iter().any(|l| l.contains("urgent") || l.contains("critical")) {
-            score += 30.0;
-            reasons.push("marked as urgent/critical".to_string());
-        }
-        if labels_lower.iter().any(|l| l.contains("high") && l.contains("priority")) {
-            score += 20.0;
-            reasons.push("high priority".to_string());
-        }
-        if labels_lower.iter().any(|l| l.contains("blocked") || l.contains("waiting")) {
-            score -= 50.0; // Deprioritize blocked tasks
-        }
-
-        // Status scoring
-        if issue.status.to_lowercase().contains("in_progress") || issue.status.to_lowercase().contains("doing") {
-            score += 15.0;
-            reasons.push("already in progress".to_string());
-        }
-
-        suggestions.push(TaskSuggestion {
-            issue,
-            score,
-            reasons,
-            estimated_seconds,
-        });
     }
 
-    // Sort by score (highest first)
-    suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    (bonus, reason)
+}
 
-    // Take top N
-    suggestions.truncate(count);
+/// Calculate label-based score adjustments
+fn calculate_label_score(labels: &[String]) -> (f32, Vec<String>) {
+    let labels_lower: Vec<String> = labels.iter().map(|l| l.to_lowercase()).collect();
+    let mut score = 0.0f32;
+    let mut reasons = Vec::new();
 
-    if suggestions.is_empty() {
-        println!("No tasks match your constraints.");
-        if max_time_seconds.is_some() {
-            println!("Try increasing the --time limit or removing constraints.");
-        }
-        return Ok(());
+    if labels_lower.iter().any(|l| l.contains("urgent") || l.contains("critical")) {
+        score += 30.0;
+        reasons.push("marked as urgent/critical".to_string());
+    }
+    if labels_lower.iter().any(|l| l.contains("high") && l.contains("priority")) {
+        score += 20.0;
+        reasons.push("high priority".to_string());
+    }
+    if labels_lower.iter().any(|l| l.contains("blocked") || l.contains("waiting")) {
+        score -= 50.0;
     }
 
-    // Display suggestions
+    (score, reasons)
+}
+
+/// Score a single issue based on all criteria
+fn score_issue(
+    issue: &IssueCandidate,
+    estimated_seconds: u32,
+    ctx: &ScoringContext<'_>,
+) -> Option<(f32, Vec<String>)> {
+    let mut score = 50.0f32;
+    let mut reasons = Vec::new();
+
+    // Time constraint
+    if let Some((passes, bonus, reason)) = check_time_constraint(estimated_seconds, ctx.max_time_seconds) {
+        if !passes {
+            return None;
+        }
+        score += bonus;
+        reasons.extend(reason);
+    }
+
+    // Focus level constraint
+    let complexity = issue.complexity.unwrap_or(Complexity::Moderate);
+    let (focus_bonus, focus_reason) = check_focus_constraint(complexity, ctx.focus_level)?;
+    score += focus_bonus;
+    reasons.extend(focus_reason);
+
+    // Context continuity
+    if ctx.recent_issue_ids.contains(&issue.external_id) {
+        score += 25.0;
+        reasons.push("continues recent work".to_string());
+    }
+
+    // Embedding similarity
+    let (embed_bonus, embed_reason) = calculate_embedding_bonus(issue, ctx.recent_issue_ids, ctx.db);
+    score += embed_bonus;
+    reasons.extend(embed_reason);
+
+    // Label scoring
+    let (label_score, label_reasons) = calculate_label_score(&issue.labels);
+    score += label_score;
+    reasons.extend(label_reasons);
+
+    // Status scoring
+    let status_lower = issue.status.to_lowercase();
+    if status_lower.contains("in_progress") || status_lower.contains("doing") {
+        score += 15.0;
+        reasons.push("already in progress".to_string());
+    }
+
+    Some((score, reasons))
+}
+
+/// Display task suggestions
+fn display_suggestions(suggestions: &[TaskSuggestion], max_time_seconds: Option<u32>, focus_level: FocusLevel, has_focus: bool) {
     println!("Suggested next tasks:\n");
 
     for (i, suggestion) in suggestions.iter().enumerate() {
@@ -287,8 +274,7 @@ pub async fn handle_next_command(
             .unwrap_or_default();
 
         println!(
-            "{} {}. #{} - {}{}",
-            prefix,
+            "{prefix} {}. #{} - {}{}",
             i + 1,
             suggestion.issue.external_id,
             suggestion.issue.title,
@@ -306,15 +292,93 @@ pub async fn handle_next_command(
         println!();
     }
 
-    // Show constraints if any
-    if max_time_seconds.is_some() || focus.is_some() {
+    if max_time_seconds.is_some() || has_focus {
         println!("Constraints:");
         if let Some(max) = max_time_seconds {
             println!("  Time: <= {}", format_duration(max));
         }
-        println!("  Focus: {:?}", focus_level);
+        println!("  Focus: {focus_level:?}");
+    }
+}
+
+/// Handle the next task suggestion command
+pub async fn handle_next_command(
+    time: Option<&str>,
+    focus: Option<&str>,
+    count: usize,
+) -> Result<()> {
+    let db = Arc::new(Database::new(None).context("Failed to open database")?);
+
+    // Parse constraints
+    let max_time_seconds = time.and_then(parse_time_to_seconds);
+    let focus_level = focus.and_then(FocusLevel::parse).unwrap_or(FocusLevel::Normal);
+
+    // Get all projects
+    let projects = db.get_all_projects()?;
+    if projects.is_empty() {
+        println!("No projects found. Run 'toki project auto-link' first.");
+        return Ok(());
     }
 
+    // Collect all active issues across projects
+    let all_issues: Vec<IssueCandidate> = projects
+        .iter()
+        .filter_map(|p| db.get_active_issue_candidates(p.id).ok())
+        .flatten()
+        .collect();
+
+    if all_issues.is_empty() {
+        println!("No open issues found. Run 'toki issue-sync' to sync issues from your PM system.");
+        return Ok(());
+    }
+
+    // Get recent issue IDs for context
+    let recent_issue_ids = collect_recent_issue_ids(&db);
+
+    // Create time estimator
+    let ai_service = create_ai_service(&db);
+    let estimator = TimeEstimator::new(db.clone(), ai_service);
+
+    // Create scoring context
+    let ctx = ScoringContext {
+        max_time_seconds,
+        focus_level,
+        recent_issue_ids: &recent_issue_ids,
+        db: &db,
+    };
+
+    // Score and rank issues
+    let mut suggestions: Vec<TaskSuggestion> = Vec::new();
+    for issue in all_issues {
+        let estimated_seconds = estimator
+            .estimate(&issue)
+            .await
+            .ok()
+            .map_or(7200, |e| e.estimated_seconds);
+
+        if let Some((score, reasons)) = score_issue(&issue, estimated_seconds, &ctx) {
+            suggestions.push(TaskSuggestion {
+                issue,
+                score,
+                reasons,
+                estimated_seconds,
+            });
+        }
+    }
+
+    // Sort by score (highest first) and take top N
+    suggestions.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+    suggestions.truncate(count);
+
+    if suggestions.is_empty() {
+        println!("No tasks match your constraints.");
+        if max_time_seconds.is_some() {
+            println!("Try increasing the --time limit or removing constraints.");
+        }
+        return Ok(());
+    }
+
+    display_suggestions(&suggestions, max_time_seconds, focus_level, focus.is_some());
     Ok(())
 }
 

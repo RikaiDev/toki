@@ -60,12 +60,12 @@ pub async fn handle_issue_sync_command(force: bool) -> Result<()> {
 
     let notion_client = if notion_count > 0 {
         if let Some(config) = db.get_integration_config("notion")? {
-            if !config.api_key.is_empty() {
-                println!("  Notion: configured");
-                Some(NotionClient::new(config.api_key.clone())?)
-            } else {
+            if config.api_key.is_empty() {
                 println!("  Warning: Notion API key not set");
                 None
+            } else {
+                println!("  Notion: configured");
+                Some(NotionClient::new(config.api_key.clone())?)
             }
         } else {
             println!("  Warning: Notion not configured");

@@ -211,7 +211,7 @@ impl Database {
 
     /// Get time statistics for issues with historical data
     ///
-    /// Returns a list of (issue_id, issue_system, total_seconds, session_count)
+    /// Returns a list of (`issue_id`, `issue_system`, `total_seconds`, `session_count`)
     ///
     /// # Errors
     ///

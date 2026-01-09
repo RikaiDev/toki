@@ -56,15 +56,12 @@ impl WorkContextDetector {
     ) -> Result<Option<WorkItemRef>> {
         // Store IDE workspace path locally to avoid memory leak from Box::leak
         let ide_workspace: Option<PathBuf> = if working_dir.is_none() {
-            match vscode::get_last_workspace(window_title).await {
-                Ok(Some(ide_path)) => {
-                    log::debug!("Got workspace from VSCode: {}", ide_path.display());
-                    Some(ide_path)
-                }
-                _ => {
-                    log::debug!("Could not get workspace from VSCode.");
-                    None
-                }
+            if let Ok(Some(ide_path)) = vscode::get_last_workspace(window_title).await {
+                log::debug!("Got workspace from VSCode: {}", ide_path.display());
+                Some(ide_path)
+            } else {
+                log::debug!("Could not get workspace from VSCode.");
+                None
             }
         } else {
             None
@@ -72,7 +69,7 @@ impl WorkContextDetector {
 
         // Use either the provided working_dir or the IDE workspace
         let from_ide = working_dir.is_none() && ide_workspace.is_some();
-        let effective_dir: Option<&Path> = working_dir.or_else(|| ide_workspace.as_deref());
+        let effective_dir: Option<&Path> = working_dir.or(ide_workspace.as_deref());
 
         // 1-2. Try Git detection (branch then commit)
         if let Some(dir) = effective_dir {

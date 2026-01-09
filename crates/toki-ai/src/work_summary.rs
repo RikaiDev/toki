@@ -84,7 +84,7 @@ impl SummaryPeriod {
             Self::Yesterday => "Yesterday".to_string(),
             Self::Week => "This Week".to_string(),
             Self::Month => "This Month".to_string(),
-            Self::Custom { start, end } => format!("{} to {}", start, end),
+            Self::Custom { start, end } => format!("{start} to {end}"),
         }
     }
 }
@@ -121,14 +121,14 @@ impl WorkSummary {
 
         if hours > 0 {
             if minutes > 0 {
-                format!("{}h {}m", hours, minutes)
+                format!("{hours}h {minutes}m")
             } else {
-                format!("{}h", hours)
+                format!("{hours}h")
             }
         } else if minutes > 0 {
-            format!("{}m", minutes)
+            format!("{minutes}m")
         } else {
-            format!("{}s", seconds)
+            format!("{seconds}s")
         }
     }
 
@@ -178,7 +178,7 @@ impl WorkSummary {
         if !self.insights.is_empty() {
             output.push_str("## Insights\n\n");
             for insight in &self.insights {
-                output.push_str(&format!("- {}\n", insight));
+                output.push_str(&format!("- {insight}\n"));
             }
             output.push('\n');
         }
@@ -187,7 +187,7 @@ impl WorkSummary {
         if !self.suggestions.is_empty() {
             output.push_str("## Suggestions\n\n");
             for suggestion in &self.suggestions {
-                output.push_str(&format!("- {}\n", suggestion));
+                output.push_str(&format!("- {suggestion}\n"));
             }
             output.push('\n');
         }
@@ -355,7 +355,7 @@ impl WorkSummaryGenerator {
         let project = self
             .db
             .get_project_by_path(project_path)?
-            .ok_or_else(|| anyhow::anyhow!("Project not found: {}", project_path))?;
+            .ok_or_else(|| anyhow::anyhow!("Project not found: {project_path}"))?;
 
         // Get all sessions and filter by project
         let all_sessions = self.db.get_claude_sessions(start, end)?;
@@ -429,8 +429,7 @@ impl WorkSummaryGenerator {
         };
         if tools_per_hour > 0.0 {
             insights.push(format!(
-                "Tool usage rate: {:.1} calls/hour",
-                tools_per_hour
+                "Tool usage rate: {tools_per_hour:.1} calls/hour"
             ));
         }
 
@@ -458,8 +457,7 @@ impl WorkSummaryGenerator {
         let active_sessions = sessions.iter().filter(|s| s.is_active()).count();
         if active_sessions > 0 {
             insights.push(format!(
-                "{} session(s) currently active",
-                active_sessions
+                "{active_sessions} session(s) currently active"
             ));
         }
 

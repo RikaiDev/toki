@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::ai_provider::AiProviderTrait;
 
-/// OpenAI API Provider (also compatible with other OpenAI-compatible APIs)
+/// `OpenAI` API Provider (also compatible with other OpenAI-compatible APIs)
 pub struct OpenAiProvider {
     client: Client,
     api_key: String,
@@ -14,7 +14,7 @@ pub struct OpenAiProvider {
 }
 
 impl OpenAiProvider {
-    pub fn new(api_key: &str, model: &str, base_url: Option<&str>) -> Self {
+    #[must_use] pub fn new(api_key: &str, model: &str, base_url: Option<&str>) -> Self {
         Self {
             client: Client::new(),
             api_key: api_key.to_string(),
@@ -55,7 +55,7 @@ impl AiProviderTrait for OpenAiProvider {
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            anyhow::bail!("OpenAI API error: {}", error_text);
+            anyhow::bail!("OpenAI API error: {error_text}");
         }
 
         let json: serde_json::Value = response
@@ -66,7 +66,7 @@ impl AiProviderTrait for OpenAiProvider {
         // Extract text from: choices[0].message.content
         json["choices"][0]["message"]["content"]
             .as_str()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .context("Failed to extract text from OpenAI response")
     }
 }
