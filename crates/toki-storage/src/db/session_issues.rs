@@ -1,9 +1,9 @@
 use anyhow::Result;
 use rusqlite::params;
 
-use crate::models::{IssueRelationship, SessionIssue};
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::{IssueRelationship, SessionIssue};
 
 impl Database {
     /// Link an issue to a Claude session
@@ -259,13 +259,11 @@ impl Database {
             .unwrap_or(IssueRelationship::WorkedOn);
 
         Ok(SessionIssue {
-            session_id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            session_id: parse_uuid(&row.get::<_, String>(0)?)?,
             issue_id: row.get(1)?,
             issue_system: row.get(2)?,
             relationship,
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                .unwrap()
-                .with_timezone(&chrono::Utc),
+            created_at: parse_datetime(&row.get::<_, String>(4)?)?,
         })
     }
 }

@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 
-use crate::models::{ActivitySpan, ActivitySpanContext};
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::{ActivitySpan, ActivitySpanContext};
 
 impl Database {
     /// Create a new activity span
@@ -150,12 +150,10 @@ impl Database {
         let context = context_json.and_then(|s| serde_json::from_str(&s).ok());
 
         Ok(ActivitySpan {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             app_bundle_id: row.get(1)?,
             category: row.get(2)?,
-            start_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            start_time: parse_datetime(&row.get::<_, String>(3)?)?,
             end_time: row
                 .get::<_, Option<String>>(4)?
                 .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
@@ -198,12 +196,10 @@ impl Database {
                     let context_json: Option<String> = row.get(9)?;
                     let context = context_json.and_then(|s| serde_json::from_str(&s).ok());
                     Ok(ActivitySpan {
-                        id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                        id: parse_uuid(&row.get::<_, String>(0)?)?,
                         app_bundle_id: row.get(1)?,
                         category: row.get(2)?,
-                        start_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                            .unwrap()
-                            .with_timezone(&Utc),
+                        start_time: parse_datetime(&row.get::<_, String>(3)?)?,
                         end_time: None,
                         duration_seconds: row.get(5)?,
                         project_id: row

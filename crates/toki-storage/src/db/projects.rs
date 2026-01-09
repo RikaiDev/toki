@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::models::Project;
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::Project;
 
 impl Database {
     /// Get or create a project by path
@@ -208,16 +208,12 @@ impl Database {
         let results = stmt
             .query_map(params![date], |row| {
                 let project = Project {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     name: row.get(1)?,
                     path: row.get(2)?,
                     description: row.get(3)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    last_active: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    created_at: parse_datetime(&row.get::<_, String>(4)?)?,
+                    last_active: parse_datetime(&row.get::<_, String>(5)?)?,
                     pm_system: row.get(6)?,
                     pm_project_id: row.get(7)?,
                     pm_workspace: row.get(8)?,
@@ -283,16 +279,12 @@ impl Database {
     /// Helper function to parse `Project` from database row
     pub(crate) fn row_to_project(row: &rusqlite::Row) -> rusqlite::Result<Project> {
         Ok(Project {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             name: row.get(1)?,
             path: row.get(2)?,
             description: row.get(3)?,
-            created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                .unwrap()
-                .with_timezone(&Utc),
-            last_active: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: parse_datetime(&row.get::<_, String>(4)?)?,
+            last_active: parse_datetime(&row.get::<_, String>(5)?)?,
             pm_system: row.get(6)?,
             pm_project_id: row.get(7)?,
             pm_workspace: row.get(8)?,

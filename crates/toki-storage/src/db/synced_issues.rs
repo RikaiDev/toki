@@ -1,10 +1,9 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::models::SyncedIssue;
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::SyncedIssue;
 
 impl Database {
     /// Insert or update a synced issue record
@@ -152,7 +151,7 @@ impl Database {
     /// Helper function to parse `SyncedIssue` from database row
     pub(crate) fn row_to_synced_issue(row: &rusqlite::Row) -> rusqlite::Result<SyncedIssue> {
         Ok(SyncedIssue {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             source_page_id: row.get(1)?,
             source_database_id: row.get(2)?,
             target_system: row.get(3)?,
@@ -161,12 +160,8 @@ impl Database {
             target_issue_number: row.get(6)?,
             target_issue_url: row.get(7)?,
             title: row.get(8)?,
-            created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
-                .unwrap()
-                .with_timezone(&Utc),
-            updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(10)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: parse_datetime(&row.get::<_, String>(9)?)?,
+            updated_at: parse_datetime(&row.get::<_, String>(10)?)?,
         })
     }
 }

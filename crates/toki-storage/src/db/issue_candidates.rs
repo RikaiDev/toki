@@ -1,10 +1,9 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::models::{Complexity, IssueCandidate};
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::{Complexity, IssueCandidate};
 
 impl Database {
     /// Upsert an issue candidate (for AI matching)
@@ -258,8 +257,8 @@ impl Database {
         let estimate_source: Option<String> = row.get(16)?;
 
         Ok(IssueCandidate {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-            project_id: uuid::Uuid::parse_str(&row.get::<_, String>(1)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
+            project_id: parse_uuid(&row.get::<_, String>(1)?)?,
             external_id: row.get(2)?,
             external_system: row.get(3)?,
             pm_project_id: row.get(4)?,
@@ -270,9 +269,7 @@ impl Database {
             labels,
             assignee: row.get(10)?,
             embedding,
-            last_synced: DateTime::parse_from_rfc3339(&row.get::<_, String>(12)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            last_synced: parse_datetime(&row.get::<_, String>(12)?)?,
             complexity,
             complexity_reason: row.get(14)?,
             estimated_seconds,

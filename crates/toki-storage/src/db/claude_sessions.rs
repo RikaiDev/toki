@@ -2,9 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 
-use crate::models::ClaudeSession;
-
+use super::helpers::{parse_datetime, parse_uuid};
 use super::Database;
+use crate::models::ClaudeSession;
 
 impl Database {
     /// Start a new Claude Code session
@@ -172,14 +172,12 @@ impl Database {
     /// Helper function to parse `ClaudeSession` from database row
     pub(crate) fn row_to_claude_session(row: &rusqlite::Row) -> rusqlite::Result<ClaudeSession> {
         Ok(ClaudeSession {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             session_id: row.get(1)?,
             project_id: row
                 .get::<_, Option<String>>(2)?
                 .and_then(|s| uuid::Uuid::parse_str(&s).ok()),
-            started_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            started_at: parse_datetime(&row.get::<_, String>(3)?)?,
             ended_at: row
                 .get::<_, Option<String>>(4)?
                 .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
@@ -187,9 +185,7 @@ impl Database {
             end_reason: row.get(5)?,
             tool_calls: row.get(6)?,
             prompt_count: row.get(7)?,
-            created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
-                .unwrap()
-                .with_timezone(&Utc),
+            created_at: parse_datetime(&row.get::<_, String>(8)?)?,
         })
     }
 }

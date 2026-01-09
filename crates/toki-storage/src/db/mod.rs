@@ -5,6 +5,7 @@
 mod activity_spans;
 mod ai_config;
 mod claude_sessions;
+pub(crate) mod helpers;
 mod issue_candidates;
 mod projects;
 mod session_issues;
@@ -15,6 +16,7 @@ pub use session_issues::IssueTimeStats;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use helpers::{parse_datetime, parse_uuid};
 use rusqlite::{params, Connection, OptionalExtension};
 use std::path::PathBuf;
 
@@ -141,10 +143,8 @@ impl Database {
         let activities = stmt
             .query_map(params![start.to_rfc3339(), end.to_rfc3339()], |row| {
                 Ok(Activity {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    timestamp: parse_datetime(&row.get::<_, String>(1)?)?,
                     app_bundle_id: row.get(2)?,
                     category: row.get(3)?,
                     duration_seconds: row.get(4)?,
@@ -192,10 +192,8 @@ impl Database {
         let activities = stmt
             .query_map(params![work_item_id.to_string()], |row| {
                 Ok(Activity {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    timestamp: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    timestamp: parse_datetime(&row.get::<_, String>(1)?)?,
                     app_bundle_id: row.get(2)?,
                     category: row.get(3)?,
                     duration_seconds: row.get(4)?,
@@ -251,7 +249,7 @@ impl Database {
         let categories = stmt
             .query_map([], |row| {
                 Ok(Category {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     name: row.get(1)?,
                     pattern: row.get(2)?,
                     description: row.get(3)?,
@@ -293,7 +291,7 @@ impl Database {
                         serde_json::from_str(&url_whitelist_json).unwrap_or_default();
 
                     Ok(Settings {
-                        id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                        id: parse_uuid(&row.get::<_, String>(0)?)?,
                         pause_tracking: row.get::<_, i32>(1)? != 0,
                         excluded_apps,
                         idle_threshold_seconds: row.get(3)?,
@@ -458,7 +456,7 @@ impl Database {
     /// Helper function to parse `WorkItem` from database row
     fn row_to_work_item(row: &rusqlite::Row) -> rusqlite::Result<WorkItem> {
         Ok(WorkItem {
-            id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+            id: parse_uuid(&row.get::<_, String>(0)?)?,
             external_id: row.get(1)?,
             external_system: row.get(2)?,
             title: row.get(3)?,
@@ -495,13 +493,9 @@ impl Database {
                 let source_str: String = row.get(7)?;
 
                 Ok(crate::models::TimeBlock {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    start_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
-                    end_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(2)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    start_time: parse_datetime(&row.get::<_, String>(1)?)?,
+                    end_time: parse_datetime(&row.get::<_, String>(2)?)?,
                     project_id: row
                         .get::<_, Option<String>>(3)?
                         .and_then(|s| uuid::Uuid::parse_str(&s).ok()),
@@ -515,9 +509,7 @@ impl Database {
                     },
                     confidence: row.get(8)?,
                     confirmed: row.get::<_, i32>(9)? != 0,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(10)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    created_at: parse_datetime(&row.get::<_, String>(10)?)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -608,18 +600,14 @@ impl Database {
                 params![system_type],
                 |row| {
                     Ok(IntegrationConfig {
-                        id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                        id: parse_uuid(&row.get::<_, String>(0)?)?,
                         system_type: row.get(1)?,
                         api_url: row.get(2)?,
                         api_key: row.get(3)?,
                         workspace_slug: row.get(4)?,
                         project_id: row.get(5)?,
-                        created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
-                            .unwrap()
-                            .with_timezone(&Utc),
-                        updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
-                            .unwrap()
-                            .with_timezone(&Utc),
+                        created_at: parse_datetime(&row.get::<_, String>(6)?)?,
+                        updated_at: parse_datetime(&row.get::<_, String>(7)?)?,
                     })
                 },
             )
@@ -765,10 +753,8 @@ impl Database {
                 [],
                 |row| {
                     Ok(Session {
-                        id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                        start_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                            .unwrap()
-                            .with_timezone(&Utc),
+                        id: parse_uuid(&row.get::<_, String>(0)?)?,
+                        start_time: parse_datetime(&row.get::<_, String>(1)?)?,
                         end_time: None,
                         total_active_seconds: row.get(3)?,
                         idle_seconds: row.get(4)?,
@@ -805,10 +791,8 @@ impl Database {
         let sessions = stmt
             .query_map(params![start.to_rfc3339(), end.to_rfc3339()], |row| {
                 Ok(Session {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
-                    start_time: DateTime::parse_from_rfc3339(&row.get::<_, String>(1)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
+                    start_time: parse_datetime(&row.get::<_, String>(1)?)?,
                     end_time: row
                         .get::<_, Option<String>>(2)?
                         .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
@@ -867,7 +851,7 @@ impl Database {
         let rules = stmt
             .query_map([], |row| {
                 Ok(ClassificationRule {
-                    id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                    id: parse_uuid(&row.get::<_, String>(0)?)?,
                     pattern: row.get(1)?,
                     pattern_type: row
                         .get::<_, String>(2)?
@@ -875,9 +859,7 @@ impl Database {
                         .unwrap_or(PatternType::WindowTitle),
                     category: row.get(3)?,
                     priority: row.get(4)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                        .unwrap()
-                        .with_timezone(&Utc),
+                    created_at: parse_datetime(&row.get::<_, String>(5)?)?,
                     hit_count: row.get(6)?,
                     last_hit: row
                         .get::<_, Option<String>>(7)?
@@ -937,7 +919,7 @@ impl Database {
                 params![pattern, pattern_type.to_string()],
                 |row| {
                     Ok(ClassificationRule {
-                        id: uuid::Uuid::parse_str(&row.get::<_, String>(0)?).unwrap(),
+                        id: parse_uuid(&row.get::<_, String>(0)?)?,
                         pattern: row.get(1)?,
                         pattern_type: row
                             .get::<_, String>(2)?
@@ -945,9 +927,7 @@ impl Database {
                             .unwrap_or(PatternType::WindowTitle),
                         category: row.get(3)?,
                         priority: row.get(4)?,
-                        created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(5)?)
-                            .unwrap()
-                            .with_timezone(&Utc),
+                        created_at: parse_datetime(&row.get::<_, String>(5)?)?,
                         hit_count: row.get(6)?,
                         last_hit: row
                             .get::<_, Option<String>>(7)?
