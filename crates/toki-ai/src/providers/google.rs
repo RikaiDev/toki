@@ -67,12 +67,6 @@ impl AiProviderTrait for GoogleGenAiProvider {
             .context("Failed to extract text from Google AI response")
     }
 
-    async fn is_available(&self) -> bool {
-        // Quick check if we can reach the API (using a minimal model list call or similar would be better,
-        // but for now we just assume if we have a key it's "available" configuration-wise,
-        // or we could try a tiny generation.)
-        // For simplicity/performance, we assume true if initialized, 
-        // fallback logic in service will handle actual failures.
-        true
-    }
+    // Note: is_available() uses default trait implementation (returns true).
+    // For cloud APIs, availability is checked on actual API calls.
 }

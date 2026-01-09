@@ -256,19 +256,3 @@ fn is_newer_version(latest: &str, current: &str) -> bool {
 
     latest_parts > current_parts
 }
-
-/// Background update check (for daemon startup)
-#[allow(dead_code)]
-pub fn check_for_updates_background() {
-    std::thread::spawn(|| {
-        if let Ok(latest) = fetch_latest_release() {
-            let latest_version = latest.tag_name.trim_start_matches('v');
-            if is_newer_version(latest_version, CURRENT_VERSION) {
-                eprintln!(
-                    "\n[toki] New version available: v{latest_version} (current: v{CURRENT_VERSION})"
-                );
-                eprintln!("[toki] Run `toki update` to install\n");
-            }
-        }
-    });
-}
