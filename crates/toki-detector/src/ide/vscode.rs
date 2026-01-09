@@ -215,7 +215,7 @@ pub async fn get_last_workspace(window_title: Option<&str>) -> Result<Option<Pat
                             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                                 // Exact match (case-insensitive)
                                 if name.eq_ignore_ascii_case(project) {
-                                    log::debug!("Matched workspace: {path:?}");
+                                    log::debug!("Matched workspace: {}", path.display());
                                     return Ok(Some(path));
                                 }
                             }
@@ -235,7 +235,7 @@ pub async fn get_last_workspace(window_title: Option<&str>) -> Result<Option<Pat
                                 if name_lower.contains(&project_lower)
                                     || project_lower.contains(&name_lower)
                                 {
-                                    log::debug!("Fuzzy matched workspace: {path:?}");
+                                    log::debug!("Fuzzy matched workspace: {}", path.display());
                                     return Ok(Some(path));
                                 }
                             }
@@ -252,9 +252,8 @@ pub async fn get_last_workspace(window_title: Option<&str>) -> Result<Option<Pat
         let parse_result =
             task::spawn_blocking(move || serde_json::from_str::<StorageData>(&content)).await?;
 
-        let data = match parse_result {
-            Ok(d) => d,
-            Err(_) => continue,
+        let Ok(data) = parse_result else {
+            continue;
         };
 
         if let Some(ws) = data.windows_state {
@@ -264,7 +263,7 @@ pub async fn get_last_workspace(window_title: Option<&str>) -> Result<Option<Pat
                     let path_res =
                         task::spawn_blocking(move || PathBuf::from_url(&uri_clone)).await?;
                     if let Ok(path) = path_res {
-                        log::debug!("Fallback to lastActiveWindow: {path:?}");
+                        log::debug!("Fallback to lastActiveWindow: {}", path.display());
                         return Ok(Some(path));
                     }
                 }

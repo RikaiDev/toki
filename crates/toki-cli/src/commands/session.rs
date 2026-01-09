@@ -78,7 +78,7 @@ pub enum SessionAction {
 }
 
 /// Handle session commands
-pub async fn handle_session_command(action: SessionAction) -> Result<()> {
+pub fn handle_session_command(action: SessionAction) -> Result<()> {
     match action {
         SessionAction::Start { id, project } => start_session(&id, project.as_deref()),
         SessionAction::End { id, reason } => end_session(&id, reason.as_deref()),

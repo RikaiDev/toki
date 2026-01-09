@@ -262,9 +262,9 @@ async fn main() -> Result<()> {
         Commands::Categories => commands::report::handle_categories_command(),
         Commands::Data { action } => match action {
             DataAction::Export { format, output } => {
-                commands::data::handle_data_export(format, output)
+                commands::data::handle_data_export(&format, output)
             }
-            DataAction::Delete { period } => commands::data::handle_data_delete(period),
+            DataAction::Delete { period } => commands::data::handle_data_delete(&period),
         },
         Commands::Privacy { action } => {
             use commands::privacy::PrivacyActionType;
@@ -289,7 +289,7 @@ async fn main() -> Result<()> {
         },
         Commands::Plane { action } => commands::plane::handle_plane_command(action).await,
         Commands::Review { date, verbose, confirm_all } => {
-            commands::review::handle_review_command(date, verbose, confirm_all).await
+            commands::review::handle_review_command(date, verbose, confirm_all)
         }
         Commands::Learn { action } => commands::learn::handle_learn_command(action),
         Commands::IssueSync { force } => commands::issue_sync::handle_issue_sync_command(force).await,
@@ -301,7 +301,7 @@ async fn main() -> Result<()> {
         Commands::SuggestIssue { path, max, apply } => {
             commands::suggest::run(path, max, apply)
         }
-        Commands::Session { action } => commands::session::handle_session_command(action).await,
+        Commands::Session { action } => commands::session::handle_session_command(action),
         Commands::Summary { action } => commands::summary::handle_summary_command(action),
         Commands::Standup { format, date } => {
             commands::standup::handle_standup_command(&format, date.as_deref())

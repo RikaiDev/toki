@@ -72,6 +72,11 @@ pub struct AutoLinker {
 
 impl AutoLinker {
     /// Create a new auto linker
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal regex patterns fail to compile (should never happen
+    /// as these are compile-time constant patterns).
     #[must_use]
     pub fn new(database: Arc<Database>) -> Self {
         Self {
@@ -89,6 +94,10 @@ impl AutoLinker {
     ///
     /// When a user visits a Plane.so issue page, we can infer which PM project
     /// they're working on and suggest linking it to the current local project.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Plane API call fails or database operations fail.
     pub async fn suggest_from_browser_urls(
         &self,
         urls: &[String],
@@ -99,9 +108,8 @@ impl AutoLinker {
         let pm_projects = plane_client.list_projects().await?;
 
         // Get current local project
-        let local_project = match self.database.get_project(current_project_id)? {
-            Some(p) => p,
-            None => return Ok(suggestions),
+        let Some(local_project) = self.database.get_project(current_project_id)? else {
+            return Ok(suggestions);
         };
 
         // Skip if already linked
@@ -165,6 +173,10 @@ impl AutoLinker {
     ///
     /// Compares local project names against PM project names/identifiers
     /// using exact and fuzzy matching.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database operations or Plane API calls fail.
     pub async fn suggest_from_name_matching(
         &self,
         plane_client: &PlaneClient,
@@ -239,7 +251,7 @@ impl AutoLinker {
         }
 
         // Sort by confidence descending
-        suggestions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+        suggestions.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
 
         // Deduplicate - keep highest confidence for each local project
         let mut seen: HashMap<Uuid, bool> = HashMap::new();
@@ -261,6 +273,10 @@ impl AutoLinker {
     /// Works with common patterns like:
     /// - github.com/org/project-name
     /// - gitlab.com/org/project
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database operations fail.
     pub fn suggest_from_git_remote(
         &self,
         project_path: &str,
@@ -268,24 +284,20 @@ impl AutoLinker {
     ) -> Result<Option<LinkSuggestion>> {
         // Try to read git remote
         let git_config_path = format!("{project_path}/.git/config");
-        let config_content = match std::fs::read_to_string(&git_config_path) {
-            Ok(c) => c,
-            Err(_) => return Ok(None),
+        let Ok(config_content) = std::fs::read_to_string(&git_config_path) else {
+            return Ok(None);
         };
 
         // Extract remote URL
-        let remote_url = Self::extract_remote_url(&config_content);
-        let remote_url = match remote_url {
-            Some(url) => url,
-            None => return Ok(None),
+        let Some(remote_url) = Self::extract_remote_url(&config_content) else {
+            return Ok(None);
         };
 
         // Extract project name from URL
-        let project_name = Self::extract_project_from_git_url(&remote_url);
-        let project_name = match project_name {
-            Some(name) => name.to_lowercase(),
-            None => return Ok(None),
+        let Some(project_name) = Self::extract_project_from_git_url(&remote_url) else {
+            return Ok(None);
         };
+        let project_name = project_name.to_lowercase();
 
         // Try to match with PM projects
         for pm in pm_projects {
@@ -387,7 +399,11 @@ impl AutoLinker {
         if union == 0 {
             0.0
         } else {
-            intersection as f32 / union as f32
+            // For project names (typically < 100 chars), these counts are small enough
+            // that precision loss is not a practical concern
+            #[allow(clippy::cast_precision_loss)]
+            let result = intersection as f32 / union as f32;
+            result
         }
     }
 

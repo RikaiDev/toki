@@ -123,30 +123,27 @@ impl WorkContextDetector {
     }
 
     /// Detect work item from a specific path (e.g., for git branch detection)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if Git operations fail
-    pub async fn detect_from_path(&self, path: &Path) -> Result<Option<WorkItemRef>> {
+    #[must_use]
+    pub fn detect_from_path(&self, path: &Path) -> Option<WorkItemRef> {
         // Try Git detection
         if let Ok(Some(issue_id)) = self.git_detector.detect_from_git(path) {
-            log::debug!("Detected work item {} from Git at {:?}", issue_id.id, path);
-            return Ok(Some(WorkItemRef {
+            log::debug!("Detected work item {} from Git at {}", issue_id.id, path.display());
+            return Some(WorkItemRef {
                 issue_id,
                 source: DetectionSource::GitBranch,
-            }));
+            });
         }
 
         // Try file path detection
         if let Some(issue_id) = self.parser.extract_from_path(path) {
-            log::debug!("Detected work item {} from path {:?}", issue_id.id, path);
-            return Ok(Some(WorkItemRef {
+            log::debug!("Detected work item {} from path {}", issue_id.id, path.display());
+            return Some(WorkItemRef {
                 issue_id,
                 source: DetectionSource::FilePath,
-            }));
+            });
         }
 
-        Ok(None)
+        None
     }
 }
 

@@ -4,6 +4,7 @@ use toki_integrations::{GitLabClient, PlaneClient, ProjectManagementSystem, Time
 use toki_storage::Database;
 
 #[allow(clippy::cognitive_complexity)]
+#[allow(clippy::too_many_lines)]
 pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) -> Result<()> {
     let db = Database::new(None)?;
 
@@ -46,11 +47,14 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
                         if let Some(issue) = db.get_issue_candidate_by_id(*issue_id)? {
                             // Only sync issues from the target system (plane)
                             if issue.external_system == "plane" {
+                                let duration = u32::try_from(
+                                    (block.end_time - block.start_time).num_seconds().max(0),
+                                )
+                                .unwrap_or(u32::MAX);
                                 time_entries.push(TimeEntry {
                                     work_item_id: issue.external_id.clone(),
                                     start_time: block.start_time,
-                                    duration_seconds: (block.end_time - block.start_time).num_seconds()
-                                        as u32,
+                                    duration_seconds: duration,
                                     description: block.description.clone(),
                                     category: block
                                         .tags
@@ -133,11 +137,14 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
                         if let Some(issue) = db.get_issue_candidate_by_id(*issue_id)? {
                             // Only sync Notion issues with source_page_id
                             if issue.external_system == "notion" && issue.source_page_id.is_some() {
+                                let duration = u32::try_from(
+                                    (block.end_time - block.start_time).num_seconds().max(0),
+                                )
+                                .unwrap_or(u32::MAX);
                                 time_entries.push(TimeEntry {
                                     work_item_id: issue.external_id.clone(),
                                     start_time: block.start_time,
-                                    duration_seconds: (block.end_time - block.start_time).num_seconds()
-                                        as u32,
+                                    duration_seconds: duration,
                                     description: block.description.clone(),
                                     category: block
                                         .tags
@@ -208,9 +215,9 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
             })?;
 
             let client = if config.api_url.is_empty() {
-                GitLabClient::new(config.api_key.clone(), project)?
+                GitLabClient::new(&config.api_key, &project)?
             } else {
-                GitLabClient::with_base_url(config.api_key.clone(), project, config.api_url.clone())?
+                GitLabClient::with_base_url(&config.api_key, &project, &config.api_url)?
             };
 
             let mut time_entries = Vec::new();
@@ -225,11 +232,14 @@ pub async fn handle_sync_command(system: String, dry_run: bool, reviewed: bool) 
                         if let Some(issue) = db.get_issue_candidate_by_id(*issue_id)? {
                             // Only sync GitLab issues
                             if issue.external_system == "gitlab" {
+                                let duration = u32::try_from(
+                                    (block.end_time - block.start_time).num_seconds().max(0),
+                                )
+                                .unwrap_or(u32::MAX);
                                 time_entries.push(TimeEntry {
                                     work_item_id: issue.external_id.clone(),
                                     start_time: block.start_time,
-                                    duration_seconds: (block.end_time - block.start_time).num_seconds()
-                                        as u32,
+                                    duration_seconds: duration,
                                     description: block.description.clone(),
                                     category: block
                                         .tags

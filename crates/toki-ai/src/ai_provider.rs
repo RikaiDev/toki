@@ -23,6 +23,11 @@ pub trait AiProviderTrait: Send + Sync {
 }
 
 /// Create a provider instance based on configuration
+///
+/// # Errors
+///
+/// Returns an error if the API key is missing for providers that require one
+/// (Google, `OpenAI`, Anthropic).
 pub fn create_provider(config: &AiConfig) -> Result<Box<dyn AiProviderTrait>> {
     let model = config.effective_model();
     let api_key = config.effective_api_key();

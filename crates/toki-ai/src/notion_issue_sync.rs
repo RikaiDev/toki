@@ -193,9 +193,8 @@ impl NotionIssueSyncService {
 
             match &result.outcome {
                 SyncOutcome::Created { .. } => report.record_created(),
-                SyncOutcome::Skipped { .. } => report.record_skipped(),
+                SyncOutcome::Skipped { .. } | SyncOutcome::WouldCreate => report.record_skipped(),
                 SyncOutcome::Failed { error } => report.record_failure(error.clone()),
-                SyncOutcome::WouldCreate => report.record_skipped(), // Dry run counts as skipped
             }
 
             results.push(result);

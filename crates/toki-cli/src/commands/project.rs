@@ -39,6 +39,7 @@ pub enum ProjectAction {
     },
 }
 
+#[allow(clippy::too_many_lines)]
 pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
     let db = Database::new(None)?;
 
@@ -85,10 +86,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
             notion_database,
         } => {
             // Find local project by name
-            let local_project = db.get_project_by_name(&project)?;
-            let local_project = if let Some(p) = local_project {
-                p
-            } else {
+            let Some(local_project) = db.get_project_by_name(&project)? else {
                 println!("Project not found: {project}");
                 println!("Run 'toki project list' to see available projects.");
                 return Ok(());
@@ -98,10 +96,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
             match (plane_project, notion_database) {
                 (Some(plane_id), None) => {
                     // Link to Plane.so
-                    let config = db.get_integration_config("plane")?;
-                    let config = if let Some(c) = config {
-                        c
-                    } else {
+                    let Some(config) = db.get_integration_config("plane")? else {
                         println!("Plane.so is not configured.");
                         println!("Run 'toki config set plane.api_key <your-api-key>' first.");
                         return Ok(());
@@ -119,13 +114,10 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
                     )?;
 
                     let plane_projects = plane_client.list_projects().await?;
-                    let matching_project = plane_projects
+                    let Some(plane_proj) = plane_projects
                         .iter()
-                        .find(|p| p.identifier.to_uppercase() == plane_id.to_uppercase());
-
-                    let plane_proj = if let Some(p) = matching_project {
-                        p
-                    } else {
+                        .find(|p| p.identifier.to_uppercase() == plane_id.to_uppercase())
+                    else {
                         println!("Plane project not found: {plane_id}");
                         println!("\nAvailable projects:");
                         for p in &plane_projects {
@@ -152,10 +144,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
                     // Link to Notion database
                     use toki_integrations::NotionClient;
 
-                    let config = db.get_integration_config("notion")?;
-                    let config = if let Some(c) = config {
-                        c
-                    } else {
+                    let Some(config) = db.get_integration_config("notion")? else {
                         println!("Notion is not configured.");
                         println!(
                             "Run 'toki config set notion.api_key <your-integration-token>' first."
@@ -203,10 +192,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
         }
 
         ProjectAction::Unlink { project } => {
-            let local_project = db.get_project_by_name(&project)?;
-            let local_project = if let Some(p) = local_project {
-                p
-            } else {
+            let Some(local_project) = db.get_project_by_name(&project)? else {
                 println!("Project not found: {project}");
                 return Ok(());
             };
@@ -222,10 +208,7 @@ pub async fn handle_project_command(action: ProjectAction) -> Result<()> {
             use toki_ai::AutoLinker;
 
             // Get Plane configuration
-            let config = db.get_integration_config("plane")?;
-            let config = if let Some(c) = config {
-                c
-            } else {
+            let Some(config) = db.get_integration_config("plane")? else {
                 println!("Plane.so is not configured.");
                 println!("Run 'toki config set plane.api_key <your-api-key>' first.");
                 return Ok(());

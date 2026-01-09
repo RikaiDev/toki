@@ -302,11 +302,11 @@ mod tests {
             },
         ];
 
-        let mapped = mapper.map_candidates(&candidates);
+        let results = mapper.map_candidates(&candidates);
 
-        assert_eq!(mapped.len(), 2); // "Done" should be filtered out
-        assert_eq!(mapped[0].0.title, "Task 1");
-        assert_eq!(mapped[1].0.title, "Task 3");
+        assert_eq!(results.len(), 2); // "Done" should be filtered out
+        assert_eq!(results[0].0.title, "Task 1");
+        assert_eq!(results[1].0.title, "Task 3");
     }
 
     #[test]

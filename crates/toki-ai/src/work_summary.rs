@@ -8,6 +8,7 @@
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::sync::Arc;
 
 use toki_storage::{ClaudeSession, Database, Project};
@@ -24,6 +25,10 @@ pub enum SummaryPeriod {
 
 impl SummaryPeriod {
     /// Get the date range for this period
+    ///
+    /// # Panics
+    ///
+    /// Panics if the date/time conversion fails (should never happen with valid dates)
     #[must_use]
     pub fn date_range(&self) -> (DateTime<Utc>, DateTime<Utc>) {
         let now = Utc::now();
@@ -138,38 +143,44 @@ impl WorkSummary {
         let mut output = String::new();
 
         // Header
-        output.push_str(&format!("# Work Summary - {}\n\n", self.period.display_name()));
+        let _ = writeln!(output, "# Work Summary - {}\n", self.period.display_name());
 
         // Overview
         output.push_str("## Overview\n\n");
-        output.push_str(&format!(
-            "- **Total Time**: {}\n",
+        let _ = writeln!(
+            output,
+            "- **Total Time**: {}",
             Self::format_duration(self.total_seconds)
-        ));
-        output.push_str(&format!("- **Sessions**: {}\n", self.session_count));
-        output.push_str(&format!("- **Tool Calls**: {}\n", self.total_tool_calls));
-        output.push_str(&format!("- **Prompts**: {}\n", self.total_prompts));
+        );
+        let _ = writeln!(output, "- **Sessions**: {}", self.session_count);
+        let _ = writeln!(output, "- **Tool Calls**: {}", self.total_tool_calls);
+        let _ = writeln!(output, "- **Prompts**: {}", self.total_prompts);
         output.push('\n');
 
         // Project breakdown
         if !self.projects.is_empty() {
             output.push_str("## Projects\n\n");
             for project in &self.projects {
+                // Use integer arithmetic: (part * 100) / total
+                // Result is always 0-100, safe to truncate
+                #[allow(clippy::cast_possible_truncation)]
                 let percentage = if self.total_seconds > 0 {
-                    (project.total_seconds as f32 / self.total_seconds as f32 * 100.0) as u32
+                    (u64::from(project.total_seconds) * 100 / u64::from(self.total_seconds)) as u32
                 } else {
                     0
                 };
-                output.push_str(&format!(
-                    "### {} ({}%)\n",
+                let _ = writeln!(
+                    output,
+                    "### {} ({}%)",
                     project.project.name, percentage
-                ));
-                output.push_str(&format!(
-                    "- Time: {}\n",
+                );
+                let _ = writeln!(
+                    output,
+                    "- Time: {}",
                     Self::format_duration(project.total_seconds)
-                ));
-                output.push_str(&format!("- Sessions: {}\n", project.session_count));
-                output.push_str(&format!("- Tool Calls: {}\n", project.tool_calls));
+                );
+                let _ = writeln!(output, "- Sessions: {}", project.session_count);
+                let _ = writeln!(output, "- Tool Calls: {}", project.tool_calls);
                 output.push('\n');
             }
         }
@@ -178,7 +189,7 @@ impl WorkSummary {
         if !self.insights.is_empty() {
             output.push_str("## Insights\n\n");
             for insight in &self.insights {
-                output.push_str(&format!("- {insight}\n"));
+                let _ = writeln!(output, "- {insight}");
             }
             output.push('\n');
         }
@@ -187,7 +198,7 @@ impl WorkSummary {
         if !self.suggestions.is_empty() {
             output.push_str("## Suggestions\n\n");
             for suggestion in &self.suggestions {
-                output.push_str(&format!("- {suggestion}\n"));
+                let _ = writeln!(output, "- {suggestion}");
             }
             output.push('\n');
         }
@@ -196,6 +207,11 @@ impl WorkSummary {
     }
 
     /// Generate a concise one-paragraph summary
+    ///
+    /// # Panics
+    ///
+    /// Panics if `project_names` has more than one element but `last()` returns `None`
+    /// (should never happen as the length check ensures at least 2 elements)
     #[must_use]
     pub fn generate_brief(&self) -> String {
         let time_str = Self::format_duration(self.total_seconds);
@@ -219,7 +235,7 @@ impl WorkSummary {
         } else if project_names.len() == 1 {
             project_names[0].to_string()
         } else {
-            let last = project_names.last().unwrap();
+            let last = project_names.last().expect("project_names has at least 2 elements");
             let rest: Vec<&str> = project_names[..project_names.len() - 1].to_vec();
             format!("{} and {}", rest.join(", "), last)
         };
@@ -321,15 +337,15 @@ impl WorkSummaryGenerator {
         projects.sort_by(|a, b| b.total_seconds.cmp(&a.total_seconds));
 
         // Generate insights
-        let insights = self.generate_insights(&sessions, &projects, total_seconds);
+        let insights = Self::generate_insights(&sessions, &projects, total_seconds);
 
         // Generate suggestions
-        let suggestions = self.generate_suggestions(&sessions, &projects);
+        let suggestions = Self::generate_suggestions(&sessions, &projects);
 
         Ok(WorkSummary {
             period,
             total_seconds,
-            session_count: sessions.len() as u32,
+            session_count: u32::try_from(sessions.len()).unwrap_or(u32::MAX),
             total_tool_calls,
             total_prompts,
             projects,
@@ -374,21 +390,22 @@ impl WorkSummaryGenerator {
             total_prompts += session.prompt_count;
         }
 
+        let session_count = u32::try_from(sessions.len()).unwrap_or(u32::MAX);
         let project_summary = ProjectWorkSummary {
             project: project.clone(),
             total_seconds,
-            session_count: sessions.len() as u32,
+            session_count,
             tool_calls: total_tool_calls,
             prompt_count: total_prompts,
         };
 
-        let insights = self.generate_insights(&sessions, &[project_summary.clone()], total_seconds);
-        let suggestions = self.generate_suggestions(&sessions, &[project_summary.clone()]);
+        let insights = Self::generate_insights(&sessions, &[project_summary.clone()], total_seconds);
+        let suggestions = Self::generate_suggestions(&sessions, &[project_summary.clone()]);
 
         Ok(WorkSummary {
             period,
             total_seconds,
-            session_count: sessions.len() as u32,
+            session_count,
             total_tool_calls,
             total_prompts,
             projects: vec![project_summary],
@@ -400,7 +417,6 @@ impl WorkSummaryGenerator {
 
     /// Generate insights from the data
     fn generate_insights(
-        &self,
         sessions: &[ClaudeSession],
         projects: &[ProjectWorkSummary],
         total_seconds: u32,
@@ -412,7 +428,8 @@ impl WorkSummaryGenerator {
         }
 
         // Average session duration
-        let avg_duration = total_seconds / sessions.len().max(1) as u32;
+        let session_count = u32::try_from(sessions.len().max(1)).unwrap_or(u32::MAX);
+        let avg_duration = total_seconds / session_count;
         if avg_duration > 0 {
             insights.push(format!(
                 "Average session duration: {}",
@@ -421,9 +438,10 @@ impl WorkSummaryGenerator {
         }
 
         // Tool usage intensity
+        // Using f64 for precision in statistical calculations
         let tools_per_hour = if total_seconds > 0 {
-            (sessions.iter().map(|s| s.tool_calls).sum::<u32>() as f32 / total_seconds as f32)
-                * 3600.0
+            let total_tools: u32 = sessions.iter().map(|s| s.tool_calls).sum();
+            (f64::from(total_tools) / f64::from(total_seconds)) * 3600.0
         } else {
             0.0
         };
@@ -435,8 +453,11 @@ impl WorkSummaryGenerator {
 
         // Focus analysis
         if let Some(top_project) = projects.first() {
+            // Use integer arithmetic: (part * 100) / total
+            // Result is always 0-100, safe to truncate
+            #[allow(clippy::cast_possible_truncation)]
             let focus_percentage = if total_seconds > 0 {
-                (top_project.total_seconds as f32 / total_seconds as f32 * 100.0) as u32
+                (u64::from(top_project.total_seconds) * 100 / u64::from(total_seconds)) as u32
             } else {
                 0
             };
@@ -466,7 +487,6 @@ impl WorkSummaryGenerator {
 
     /// Generate suggestions based on the data
     fn generate_suggestions(
-        &self,
         sessions: &[ClaudeSession],
         projects: &[ProjectWorkSummary],
     ) -> Vec<String> {

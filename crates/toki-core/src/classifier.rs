@@ -51,6 +51,10 @@ impl Classifier {
     }
 
     /// Create classifier with database reference for recording hits
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database query for categories fails
     pub fn from_database_arc(db: Arc<Database>) -> Result<Self> {
         let categories = db.get_categories()?;
         let user_rules = db.get_classification_rules().unwrap_or_default();
@@ -67,6 +71,10 @@ impl Classifier {
     }
 
     /// Reload user rules from database
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database query for classification rules fails
     pub fn reload_rules(&mut self) -> Result<()> {
         if let Some(db) = &self.database {
             self.user_rules = db.get_classification_rules()?;

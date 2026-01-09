@@ -155,7 +155,7 @@ fn collect_metrics(db: &Database, start: DateTime<Utc>, end: DateTime<Utc>) -> R
         *metrics.sessions_per_day.entry(day).or_insert(0) += 1;
     }
 
-    metrics.project_count = projects_seen.len() as u32;
+    metrics.project_count = u32::try_from(projects_seen.len()).unwrap_or(u32::MAX);
 
     if metrics.session_count > 0 {
         metrics.avg_session_seconds = metrics.total_seconds / metrics.session_count;
@@ -194,7 +194,8 @@ fn detect_anomalies(current: &ProductivityMetrics, previous: Option<&Productivit
     if let Some(prev) = previous {
         // Significant change in total time (> 50% increase or decrease)
         if prev.total_seconds > 0 {
-            let change = (current.total_seconds as f32 - prev.total_seconds as f32) / prev.total_seconds as f32;
+            let change = (f64::from(current.total_seconds) - f64::from(prev.total_seconds))
+                / f64::from(prev.total_seconds);
             if change > 0.5 {
                 anomalies.push(Anomaly {
                     description: "Work time increased significantly".to_string(),
@@ -214,7 +215,8 @@ fn detect_anomalies(current: &ProductivityMetrics, previous: Option<&Productivit
 
         // Change in session count
         if prev.session_count > 0 {
-            let change = (current.session_count as f32 - prev.session_count as f32) / prev.session_count as f32;
+            let change = (f64::from(current.session_count) - f64::from(prev.session_count))
+                / f64::from(prev.session_count);
             if change.abs() > 0.5 {
                 anomalies.push(Anomaly {
                     description: "Session count changed significantly".to_string(),
@@ -227,7 +229,8 @@ fn detect_anomalies(current: &ProductivityMetrics, previous: Option<&Productivit
 
         // Context switch increase
         if prev.context_switches > 0 {
-            let change = (current.context_switches as f32 - prev.context_switches as f32) / prev.context_switches as f32;
+            let change = (f64::from(current.context_switches) - f64::from(prev.context_switches))
+                / f64::from(prev.context_switches);
             if change > 1.0 {
                 anomalies.push(Anomaly {
                     description: "Context switches increased dramatically".to_string(),
@@ -292,11 +295,95 @@ fn generate_suggestions(metrics: &ProductivityMetrics, anomalies: &[Anomaly]) ->
                     suggestions.push("Work time is down - is this intentional or a blocker?".to_string());
                 }
             }
-            _ => {}
+            AnomalySeverity::Info => {}
         }
     }
 
     suggestions
+}
+
+/// Print the summary section
+fn print_summary(metrics: &ProductivityMetrics) {
+    println!("Summary");
+    println!("{}", "\u{2500}".repeat(40));
+    println!("Total time:      {}", format_duration(metrics.total_seconds));
+    println!("Sessions:        {}", metrics.session_count);
+    println!("Avg session:     {}", format_duration(metrics.avg_session_seconds));
+    println!("Projects:        {}", metrics.project_count);
+    println!("Tool calls:      {}", metrics.total_tool_calls);
+    println!("Prompts:         {}", metrics.total_prompts);
+    println!("Context switches:{}", metrics.context_switches);
+}
+
+/// Print the anomalies section
+fn print_anomalies(anomalies: &[Anomaly]) {
+    if anomalies.is_empty() {
+        return;
+    }
+    println!();
+    println!("Anomalies Detected");
+    println!("{}", "\u{2500}".repeat(40));
+    for anomaly in anomalies {
+        let icon = match anomaly.severity {
+            AnomalySeverity::Alert => "!!",
+            AnomalySeverity::Warning => "! ",
+            AnomalySeverity::Info => "i ",
+        };
+        println!("[{}] {}", icon, anomaly.description);
+        println!("     Value: {} (expected: {})", anomaly.value, anomaly.expected);
+    }
+}
+
+/// Print the patterns section
+fn print_patterns(metrics: &ProductivityMetrics) {
+    println!();
+    println!("Patterns");
+    println!("{}", "\u{2500}".repeat(40));
+
+    let peak_hours = find_peak_hours(metrics);
+    if !peak_hours.is_empty() {
+        print!("Peak hours: ");
+        for (i, (hour, _)) in peak_hours.iter().enumerate() {
+            if i > 0 {
+                print!(", ");
+            }
+            print!("{hour}:00");
+        }
+        println!();
+    }
+
+    // Day of week pattern
+    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    let mut best_day = 0;
+    let mut best_day_time = 0;
+    for (i, &time) in metrics.daily_distribution.iter().enumerate() {
+        if time > best_day_time {
+            best_day = i;
+            best_day_time = time;
+        }
+    }
+    if best_day_time > 0 {
+        println!(
+            "Most productive day: {} ({})",
+            days[best_day],
+            format_duration(best_day_time)
+        );
+    }
+
+    println!("Longest session: {}", format_duration(metrics.longest_session));
+}
+
+/// Print the suggestions section
+fn print_suggestions_section(suggestions: &[String]) {
+    if suggestions.is_empty() {
+        return;
+    }
+    println!();
+    println!("Suggestions");
+    println!("{}", "\u{2500}".repeat(40));
+    for suggestion in suggestions {
+        println!("- {suggestion}");
+    }
 }
 
 /// Handle the insights command
@@ -313,7 +400,11 @@ pub fn handle_insights_command(
 
     println!("Productivity Insights");
     println!("{}", "\u{2550}".repeat(50));
-    println!("Period: {} to {}", start.format("%Y-%m-%d"), end.format("%Y-%m-%d"));
+    println!(
+        "Period: {} to {}",
+        start.format("%Y-%m-%d"),
+        end.format("%Y-%m-%d")
+    );
     println!();
 
     // Collect current metrics
@@ -355,16 +446,7 @@ pub fn handle_insights_command(
         None => {}
     }
 
-    // Print summary
-    println!("Summary");
-    println!("{}", "\u{2500}".repeat(40));
-    println!("Total time:      {}", format_duration(current_metrics.total_seconds));
-    println!("Sessions:        {}", current_metrics.session_count);
-    println!("Avg session:     {}", format_duration(current_metrics.avg_session_seconds));
-    println!("Projects:        {}", current_metrics.project_count);
-    println!("Tool calls:      {}", current_metrics.total_tool_calls);
-    println!("Prompts:         {}", current_metrics.total_prompts);
-    println!("Context switches:{}", current_metrics.context_switches);
+    print_summary(&current_metrics);
 
     if compare {
         if let Some(ref prev) = previous_metrics {
@@ -375,64 +457,12 @@ pub fn handle_insights_command(
         }
     }
 
-    // Detect anomalies
     let anomalies = detect_anomalies(&current_metrics, previous_metrics.as_ref());
-    if !anomalies.is_empty() {
-        println!();
-        println!("Anomalies Detected");
-        println!("{}", "\u{2500}".repeat(40));
-        for anomaly in &anomalies {
-            let icon = match anomaly.severity {
-                AnomalySeverity::Alert => "!!",
-                AnomalySeverity::Warning => "! ",
-                AnomalySeverity::Info => "i ",
-            };
-            println!("[{}] {}", icon, anomaly.description);
-            println!("     Value: {} (expected: {})", anomaly.value, anomaly.expected);
-        }
-    }
+    print_anomalies(&anomalies);
+    print_patterns(&current_metrics);
 
-    // Print patterns
-    println!();
-    println!("Patterns");
-    println!("{}", "\u{2500}".repeat(40));
-
-    let peak_hours = find_peak_hours(&current_metrics);
-    if !peak_hours.is_empty() {
-        print!("Peak hours: ");
-        for (i, (hour, _)) in peak_hours.iter().enumerate() {
-            if i > 0 { print!(", "); }
-            print!("{hour}:00");
-        }
-        println!();
-    }
-
-    // Day of week pattern
-    let days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    let mut best_day = 0;
-    let mut best_day_time = 0;
-    for (i, &time) in current_metrics.daily_distribution.iter().enumerate() {
-        if time > best_day_time {
-            best_day = i;
-            best_day_time = time;
-        }
-    }
-    if best_day_time > 0 {
-        println!("Most productive day: {} ({})", days[best_day], format_duration(best_day_time));
-    }
-
-    println!("Longest session: {}", format_duration(current_metrics.longest_session));
-
-    // Suggestions
     let suggestions = generate_suggestions(&current_metrics, &anomalies);
-    if !suggestions.is_empty() {
-        println!();
-        println!("Suggestions");
-        println!("{}", "\u{2500}".repeat(40));
-        for suggestion in &suggestions {
-            println!("- {suggestion}");
-        }
-    }
+    print_suggestions_section(&suggestions);
 
     Ok(())
 }
@@ -446,7 +476,14 @@ fn print_hourly_analysis(metrics: &ProductivityMetrics) {
 
     for (hour, &time) in metrics.hourly_distribution.iter().enumerate() {
         if time > 0 {
-            let bar_len = if max_time > 0 { (time as f32 / max_time as f32 * 20.0) as usize } else { 0 };
+            // Use integer arithmetic: (time * 20) / max_time gives 0-20 range
+            // Result is always 0-20, safe to convert to usize
+            let bar_len = if max_time > 0 {
+                let len_u64 = u64::from(time) * 20 / u64::from(max_time);
+                usize::try_from(len_u64).unwrap_or(20)
+            } else {
+                0
+            };
             let bar = "\u{2588}".repeat(bar_len);
             println!("{:02}:00 {} {}", hour, bar, format_duration(time));
         }
@@ -479,7 +516,7 @@ fn print_context_switch_analysis(metrics: &ProductivityMetrics) {
     println!("Projects:       {}", metrics.project_count);
 
     if metrics.session_count > 0 {
-        let switch_rate = metrics.context_switches as f32 / metrics.session_count as f32;
+        let switch_rate = f64::from(metrics.context_switches) / f64::from(metrics.session_count);
         println!("Switch rate:    {switch_rate:.2} per session");
     }
 
@@ -493,23 +530,29 @@ fn print_context_switch_analysis(metrics: &ProductivityMetrics) {
 /// Print comparison between current and previous period
 fn print_comparison(current: &ProductivityMetrics, previous: &ProductivityMetrics) {
     let time_change = if previous.total_seconds > 0 {
-        ((current.total_seconds as f32 - previous.total_seconds as f32) / previous.total_seconds as f32) * 100.0
+        ((f64::from(current.total_seconds) - f64::from(previous.total_seconds))
+            / f64::from(previous.total_seconds))
+            * 100.0
     } else {
         0.0
     };
 
     let session_change = if previous.session_count > 0 {
-        ((current.session_count as f32 - previous.session_count as f32) / previous.session_count as f32) * 100.0
+        ((f64::from(current.session_count) - f64::from(previous.session_count))
+            / f64::from(previous.session_count))
+            * 100.0
     } else {
         0.0
     };
 
-    println!("Time:     {:+.0}% ({} vs {})",
+    println!(
+        "Time:     {:+.0}% ({} vs {})",
         time_change,
         format_duration(current.total_seconds),
         format_duration(previous.total_seconds)
     );
-    println!("Sessions: {:+.0}% ({} vs {})",
+    println!(
+        "Sessions: {:+.0}% ({} vs {})",
         session_change,
         current.session_count,
         previous.session_count

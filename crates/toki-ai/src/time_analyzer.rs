@@ -9,6 +9,26 @@
 
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
+use std::fmt::Write;
+
+/// Convert i64 seconds to u32, clamping negative values to 0 and large values to `u32::MAX`
+fn seconds_to_u32(seconds: i64) -> u32 {
+    if seconds <= 0 {
+        0
+    } else if seconds > i64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        // Safety: value is guaranteed to be in range [1, u32::MAX] after the above checks
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let result = seconds as u32;
+        result
+    }
+}
+
+/// Calculate duration in seconds between two timestamps as u32
+fn duration_seconds(start: DateTime<Utc>, end: DateTime<Utc>) -> u32 {
+    seconds_to_u32((end - start).num_seconds())
+}
 
 /// Activity segment (for analysis)
 #[derive(Debug, Clone)]
@@ -81,9 +101,9 @@ impl TimeAnalyzer {
         let mut current_pattern: Option<WorkPattern> = None;
 
         for segment in segments {
-            let pattern = self.detect_pattern(segment);
+            let pattern = Self::detect_pattern(segment);
             let should_merge = current_pattern.as_ref() == Some(&pattern)
-                && self.should_merge_segments(
+                && Self::should_merge_segments(
                     current_block.as_ref().map(|b| b.end_time),
                     segment.start_time,
                 );
@@ -92,28 +112,29 @@ impl TimeAnalyzer {
                 // Merge into current block
                 if let Some(block) = &mut current_block {
                     block.end_time = segment.end_time;
-                    block.duration_seconds =
-                        (block.end_time - block.start_time).num_seconds().max(0) as u32;
+                    block.duration_seconds = duration_seconds(block.start_time, block.end_time);
 
                     // Update suggested issues
-                    self.update_suggested_issues(block, segment);
+                    Self::update_suggested_issues(block, segment);
                 }
             } else {
                 // Save current block, start new one
                 if let Some(block) = current_block.take() {
-                    if block.duration_seconds >= self.min_block_duration.num_seconds() as u32 {
+                    let min_seconds = seconds_to_u32(self.min_block_duration.num_seconds());
+                    if block.duration_seconds >= min_seconds {
                         suggestions.push(block);
                     }
                 }
 
-                current_block = Some(self.create_time_block(segment, &pattern));
+                current_block = Some(Self::create_time_block(segment, &pattern));
                 current_pattern = Some(pattern);
             }
         }
 
         // Save the last time block
         if let Some(block) = current_block {
-            if block.duration_seconds >= self.min_block_duration.num_seconds() as u32 {
+            let min_seconds = seconds_to_u32(self.min_block_duration.num_seconds());
+            if block.duration_seconds >= min_seconds {
                 suggestions.push(block);
             }
         }
@@ -122,7 +143,7 @@ impl TimeAnalyzer {
     }
 
     /// Detect work pattern
-    fn detect_pattern(&self, segment: &ActivitySegment) -> WorkPattern {
+    fn detect_pattern(segment: &ActivitySegment) -> WorkPattern {
         // Infer from file types
         let file_patterns: HashMap<&str, WorkPattern> = [
             ("test", WorkPattern::Debugging),
@@ -193,32 +214,23 @@ impl TimeAnalyzer {
     }
 
     /// Determine if two time segments should be merged
-    fn should_merge_segments(
-        &self,
-        prev_end: Option<DateTime<Utc>>,
-        next_start: DateTime<Utc>,
-    ) -> bool {
-        if let Some(end) = prev_end {
-            let gap = next_start - end;
-            // If gap is less than 10 minutes, treat as same block
-            gap < Duration::minutes(10)
-        } else {
-            false
-        }
+    fn should_merge_segments(prev_end: Option<DateTime<Utc>>, next_start: DateTime<Utc>) -> bool {
+        let Some(end) = prev_end else {
+            return false;
+        };
+        let gap = next_start - end;
+        // If gap is less than 10 minutes, treat as same block
+        gap < Duration::minutes(10)
     }
 
     /// Create new time block
-    fn create_time_block(
-        &self,
-        segment: &ActivitySegment,
-        pattern: &WorkPattern,
-    ) -> SuggestedTimeBlock {
-        let duration = (segment.end_time - segment.start_time).num_seconds().max(0) as u32;
+    fn create_time_block(segment: &ActivitySegment, pattern: &WorkPattern) -> SuggestedTimeBlock {
+        let duration = duration_seconds(segment.start_time, segment.end_time);
 
-        let description = self.generate_description(segment, pattern);
-        let suggested_issues = self.extract_issues(segment);
-        let confidence = self.calculate_confidence(&suggested_issues, pattern);
-        let reasoning = self.generate_reasoning(segment, pattern, &suggested_issues);
+        let description = Self::generate_description(segment, pattern);
+        let suggested_issues = Self::extract_issues(segment);
+        let confidence = Self::calculate_confidence(&suggested_issues, pattern);
+        let reasoning = Self::generate_reasoning(segment, pattern, &suggested_issues);
 
         SuggestedTimeBlock {
             start_time: segment.start_time,
@@ -232,8 +244,8 @@ impl TimeAnalyzer {
     }
 
     /// Update time block's suggested issues
-    fn update_suggested_issues(&self, block: &mut SuggestedTimeBlock, segment: &ActivitySegment) {
-        let new_issues = self.extract_issues(segment);
+    fn update_suggested_issues(block: &mut SuggestedTimeBlock, segment: &ActivitySegment) {
+        let new_issues = Self::extract_issues(segment);
         for issue in new_issues {
             if !block
                 .suggested_issues
@@ -244,11 +256,11 @@ impl TimeAnalyzer {
             }
         }
         block.confidence =
-            self.calculate_confidence(&block.suggested_issues, &WorkPattern::Unknown);
+            Self::calculate_confidence(&block.suggested_issues, &WorkPattern::Unknown);
     }
 
     /// Generate description
-    fn generate_description(&self, segment: &ActivitySegment, pattern: &WorkPattern) -> String {
+    fn generate_description(segment: &ActivitySegment, pattern: &WorkPattern) -> String {
         let project = segment.project_name.as_deref().unwrap_or("unknown");
 
         match pattern {
@@ -270,7 +282,7 @@ impl TimeAnalyzer {
     }
 
     /// Extract possible issues from activity
-    fn extract_issues(&self, segment: &ActivitySegment) -> Vec<SuggestedIssue> {
+    fn extract_issues(segment: &ActivitySegment) -> Vec<SuggestedIssue> {
         let mut issues = Vec::new();
         let issue_pattern = regex::Regex::new(r"(?i)([A-Z]{2,10}-\d+)").unwrap();
 
@@ -317,7 +329,7 @@ impl TimeAnalyzer {
     }
 
     /// Calculate confidence score
-    fn calculate_confidence(&self, issues: &[SuggestedIssue], pattern: &WorkPattern) -> f32 {
+    fn calculate_confidence(issues: &[SuggestedIssue], pattern: &WorkPattern) -> f32 {
         if issues.is_empty() {
             // No issue found, but may be valid work
             return match pattern {
@@ -335,7 +347,6 @@ impl TimeAnalyzer {
 
     /// Generate reasoning explanation
     fn generate_reasoning(
-        &self,
         segment: &ActivitySegment,
         pattern: &WorkPattern,
         issues: &[SuggestedIssue],
@@ -376,7 +387,7 @@ impl TimeAnalyzer {
 
         let total_seconds: u32 = segments
             .iter()
-            .map(|s| (s.end_time - s.start_time).num_seconds().max(0) as u32)
+            .map(|s| duration_seconds(s.start_time, s.end_time))
             .sum();
 
         let classified_seconds: u32 = suggestions
@@ -394,8 +405,8 @@ impl TimeAnalyzer {
                 .project_name
                 .clone()
                 .unwrap_or_else(|| "unknown".to_string());
-            let duration = (segment.end_time - segment.start_time).num_seconds().max(0) as u32;
-            *project_times.entry(project).or_insert(0) += duration;
+            let segment_duration = duration_seconds(segment.start_time, segment.end_time);
+            *project_times.entry(project).or_insert(0) += segment_duration;
         }
 
         DailySummaryReport {
@@ -432,34 +443,39 @@ impl DailySummaryReport {
     pub fn format_report(&self) -> String {
         let mut report = String::new();
 
-        report.push_str(&format!("=== {} Work Summary ===\n", self.date));
-        report.push_str(&format!(
-            "Total active time: {}\n",
+        let _ = writeln!(report, "=== {} Work Summary ===", self.date);
+        let _ = writeln!(
+            report,
+            "Total active time: {}",
             format_duration(self.total_active_seconds)
-        ));
-        report.push_str(&format!(
-            "Classified time: {} ({:.0}%)\n",
+        );
+        let percentage = if self.total_active_seconds > 0 {
+            f64::from(self.classified_seconds) / f64::from(self.total_active_seconds) * 100.0
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            report,
+            "Classified time: {} ({:.0}%)",
             format_duration(self.classified_seconds),
-            if self.total_active_seconds > 0 {
-                self.classified_seconds as f32 / self.total_active_seconds as f32 * 100.0
-            } else {
-                0.0
-            }
-        ));
-        report.push_str(&format!(
-            "Unclassified time: {}\n\n",
+            percentage
+        );
+        let _ = writeln!(
+            report,
+            "Unclassified time: {}\n",
             format_duration(self.unclassified_seconds)
-        ));
+        );
 
         report.push_str("Project breakdown:\n");
         let mut projects: Vec<_> = self.project_breakdown.iter().collect();
         projects.sort_by(|a, b| b.1.cmp(a.1));
         for (project, seconds) in projects {
-            report.push_str(&format!(
-                "   \u{2022} {}: {}\n",
+            let _ = writeln!(
+                report,
+                "   \u{2022} {}: {}",
                 project,
                 format_duration(*seconds)
-            ));
+            );
         }
 
         if !self.suggested_blocks.is_empty() {
@@ -467,26 +483,28 @@ impl DailySummaryReport {
             for (i, block) in self.suggested_blocks.iter().enumerate() {
                 let start = block.start_time.format("%H:%M");
                 let end = block.end_time.format("%H:%M");
-                report.push_str(&format!(
-                    "   {}. {} - {} ({})\n",
+                let _ = writeln!(
+                    report,
+                    "   {}. {} - {} ({})",
                     i + 1,
                     start,
                     end,
                     format_duration(block.duration_seconds)
-                ));
-                report.push_str(&format!("      {}\n", block.suggested_description));
+                );
+                let _ = writeln!(report, "      {}", block.suggested_description);
                 if !block.suggested_issues.is_empty() {
                     let issues: Vec<_> = block
                         .suggested_issues
                         .iter()
                         .map(|i| i.issue_id.as_str())
                         .collect();
-                    report.push_str(&format!("      Related: {}\n", issues.join(", ")));
+                    let _ = writeln!(report, "      Related: {}", issues.join(", "));
                 }
-                report.push_str(&format!(
-                    "      Confidence: {:.0}%\n",
+                let _ = writeln!(
+                    report,
+                    "      Confidence: {:.0}%",
                     block.confidence * 100.0
-                ));
+                );
             }
         }
 
@@ -511,8 +529,6 @@ mod tests {
 
     #[test]
     fn test_detect_pattern_from_commits() {
-        let analyzer = TimeAnalyzer::new();
-
         let segment = ActivitySegment {
             start_time: Utc::now(),
             end_time: Utc::now(),
@@ -524,13 +540,14 @@ mod tests {
             browser_urls: vec![],
         };
 
-        assert_eq!(analyzer.detect_pattern(&segment), WorkPattern::Debugging);
+        assert_eq!(
+            TimeAnalyzer::detect_pattern(&segment),
+            WorkPattern::Debugging
+        );
     }
 
     #[test]
     fn test_extract_issues_from_branch() {
-        let analyzer = TimeAnalyzer::new();
-
         let segment = ActivitySegment {
             start_time: Utc::now(),
             end_time: Utc::now(),
@@ -542,7 +559,7 @@ mod tests {
             browser_urls: vec![],
         };
 
-        let issues = analyzer.extract_issues(&segment);
+        let issues = TimeAnalyzer::extract_issues(&segment);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].issue_id, "TOKI-42");
     }

@@ -12,7 +12,7 @@ pub struct ScopeStatus {
     pub issue: IssueCandidate,
     pub estimated_seconds: u32,
     pub actual_seconds: u32,
-    pub percentage: f32,
+    pub percentage: f64,
     pub status: ScopeHealthStatus,
 }
 
@@ -30,7 +30,7 @@ pub enum ScopeHealthStatus {
 }
 
 impl ScopeHealthStatus {
-    fn from_percentage(pct: f32) -> Self {
+    fn from_percentage(pct: f64) -> Self {
         if pct < 0.8 {
             Self::OnTrack
         } else if pct < 1.0 {
@@ -42,7 +42,7 @@ impl ScopeHealthStatus {
         }
     }
 
-    fn emoji(&self) -> &'static str {
+    fn emoji(self) -> &'static str {
         match self {
             Self::OnTrack => "\u{2705}",
             Self::Warning => "\u{26a0}\u{fe0f}",
@@ -51,7 +51,7 @@ impl ScopeHealthStatus {
         }
     }
 
-    fn _label(&self) -> &'static str {
+    fn _label(self) -> &'static str {
         match self {
             Self::OnTrack => "On Track",
             Self::Warning => "Approaching",
@@ -71,7 +71,8 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
     let db_path = data_dir.join("toki.db");
     let db = Arc::new(Database::new(Some(db_path))?);
 
-    let threshold_pct = threshold.unwrap_or(80) as f32 / 100.0;
+    let threshold_val = threshold.unwrap_or(80);
+    let threshold_pct = f64::from(threshold_val) / 100.0;
 
     // Get issues with estimates
     let issues_with_estimates = db.get_issues_with_estimates(None)?;
@@ -83,9 +84,8 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
     let mut scope_statuses: Vec<ScopeStatus> = Vec::new();
 
     for issue in issues_with_estimates {
-        let estimated = match issue.estimated_seconds {
-            Some(e) => e,
-            None => continue,
+        let Some(estimated) = issue.estimated_seconds else {
+            continue;
         };
 
         // Find actual time for this issue
@@ -94,7 +94,7 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
             .find(|ts| ts.issue_id == issue.external_id && ts.issue_system == issue.external_system)
             .map_or(0, |ts| ts.total_seconds);
 
-        let percentage = actual as f32 / estimated as f32;
+        let percentage = f64::from(actual) / f64::from(estimated);
         let status = ScopeHealthStatus::from_percentage(percentage);
 
         // Filter by issue_id if provided
@@ -141,7 +141,7 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
         .collect();
 
     if !exceeding.is_empty() {
-        println!("Issues Exceeding {}% of Estimate:", (threshold_pct * 100.0) as u32);
+        println!("Issues Exceeding {threshold_val}% of Estimate:");
         println!();
 
         for s in exceeding {
@@ -168,7 +168,8 @@ pub fn handle_scope_command(issue_id: Option<&str>, threshold: Option<u32>) -> R
 
     // Average overage
     if !scope_statuses.is_empty() {
-        let avg_pct: f32 = scope_statuses.iter().map(|s| s.percentage).sum::<f32>() / scope_statuses.len() as f32;
+        #[allow(clippy::cast_precision_loss)] // count will never exceed f64 mantissa precision
+        let avg_pct: f64 = scope_statuses.iter().map(|s| s.percentage).sum::<f64>() / scope_statuses.len() as f64;
         if avg_pct > 1.0 {
             println!("\u{1f4ca} Average: {:+.0}% over estimate", (avg_pct - 1.0) * 100.0);
         } else {

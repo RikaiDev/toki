@@ -112,8 +112,8 @@ impl IssueSyncService {
         );
 
         // Fetch states to build state_id -> state_name mapping
-        let states = plane_client.list_states(&project_uuid).await?;
-        let state_map: std::collections::HashMap<Uuid, String> = states
+        let work_states = plane_client.list_states(&project_uuid).await?;
+        let state_map: std::collections::HashMap<Uuid, String> = work_states
             .into_iter()
             .map(|s| (s.id, s.name))
             .collect();
@@ -257,9 +257,9 @@ impl IssueSyncService {
             );
             candidate.pm_project_id = Some(database_id.clone());
             candidate.source_page_id = Some(candidate_data.page_id.clone());
-            candidate.description = candidate_data.description.clone();
-            candidate.status = candidate_data.status.clone();
-            candidate.labels = candidate_data.labels.clone();
+            candidate.description.clone_from(&candidate_data.description);
+            candidate.status.clone_from(&candidate_data.status);
+            candidate.labels.clone_from(&candidate_data.labels);
 
             // Preserve existing ID if updating
             if let Some(existing_candidate) = &existing {

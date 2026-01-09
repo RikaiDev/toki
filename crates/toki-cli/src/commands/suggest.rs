@@ -121,9 +121,17 @@ fn collect_git_signals(detector: &GitDetector, repo_path: &std::path::Path) -> R
     })
 }
 
-/// Generate a visual confidence bar
+/// Generate a visual confidence bar (confidence expected in range 0.0 to 1.0)
 fn get_confidence_bar(confidence: f32) -> String {
-    let filled = (confidence * 10.0).round() as usize;
+    // Clamp to valid range [0.0, 1.0], scale to [0, 10]
+    let clamped = confidence.clamp(0.0, 1.0);
+    // Value is guaranteed in [0.0, 10.0] after clamping; truncation/sign loss impossible
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let filled = (clamped * 10.0).round() as usize;
     let empty = 10 - filled;
-    format!("{}{}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty))
+    format!(
+        "{}{}",
+        "\u{2588}".repeat(filled),
+        "\u{2591}".repeat(empty)
+    )
 }

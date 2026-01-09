@@ -101,7 +101,7 @@ pub async fn handle_estimate_command(
     let estimator = TimeEstimator::new(db.clone(), ai_service);
     let time_estimate = estimator.estimate(&issue).await?;
 
-    print_time_estimate(&time_estimate, &complexity);
+    print_time_estimate(&time_estimate, complexity);
 
     // Show complexity scale reference
     println!();
@@ -121,7 +121,7 @@ pub async fn handle_estimate_command(
 }
 
 /// Print time estimate details
-fn print_time_estimate(estimate: &TimeEstimate, _complexity: &Complexity) {
+fn print_time_estimate(estimate: &TimeEstimate, _complexity: Complexity) {
     println!();
     println!("Estimated time: {}", estimate.formatted());
     println!("Range: {} (80% confidence)", estimate.formatted_range());

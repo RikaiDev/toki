@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use anyhow::{Context, Result};
 use toki_storage::models::{AiConfig, Complexity, IssueCandidate};
 use toki_storage::IssueTimeStats;
@@ -15,6 +17,10 @@ pub struct AiService {
 
 impl AiService {
     /// Create a new AI service from configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AI provider cannot be created from the configuration.
     pub fn new(config: AiConfig) -> Result<Self> {
         let provider = create_provider(&config)?;
         Ok(Self { provider, config })
@@ -35,21 +41,30 @@ impl AiService {
     /// # Arguments
     /// * `issue` - The issue to estimate
     /// * `similar_stats` - Historical stats of similar issues (for context)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AI provider fails to generate a response or
+    /// the response cannot be parsed as a valid time estimation.
     pub async fn estimate_time_rag(
         &self,
         issue: &IssueCandidate,
         similar_stats: &[IssueTimeStats],
     ) -> Result<u32> {
-        let prompt = self.build_estimation_prompt(issue, similar_stats);
+        let prompt = Self::build_estimation_prompt(issue, similar_stats);
         let response = self.provider.generate(&prompt).await?;
         
         // Parse the response to extract seconds
         // Expected format: JSON or just a number, but LLMs are chatty.
         // We'll ask for JSON format in the prompt.
-        self.parse_estimation_response(&response)
+        Self::parse_estimation_response(&response)
     }
 
     /// Analyze complexity of a task
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AI provider fails to generate a response.
     pub async fn analyze_complexity(&self, title: &str, description: &str) -> Result<Complexity> {
         let prompt = format!(
             "Analyze the complexity of the following software engineering task.\n\
@@ -74,16 +89,17 @@ impl AiService {
         }
     }
 
-    fn build_estimation_prompt(&self, issue: &IssueCandidate, similar_stats: &[IssueTimeStats]) -> String {
+    fn build_estimation_prompt(issue: &IssueCandidate, similar_stats: &[IssueTimeStats]) -> String {
         let mut context = String::new();
         if !similar_stats.is_empty() {
             context.push_str("Here are some similar resolved tasks and their actual time spent:\n");
             for (i, stat) in similar_stats.iter().enumerate().take(3) {
-                 // Note: We don't have titles for similar stats easily here unless passed, 
+                 // Note: We don't have titles for similar stats easily here unless passed,
                  // but TimeEstimator usually fetches them.
                  // For now, let's just use the ID and time.
+                 #[allow(clippy::cast_precision_loss)]
                  let hours = stat.total_seconds as f32 / 3600.0;
-                 context.push_str(&format!("{}. {} took {:.1} hours\n", i+1, stat.issue_id, hours));
+                 let _ = writeln!(context, "{}. {} took {:.1} hours", i + 1, stat.issue_id, hours);
             }
             context.push('\n');
         }
@@ -107,7 +123,7 @@ impl AiService {
         )
     }
 
-    fn parse_estimation_response(&self, response: &str) -> Result<u32> {
+    fn parse_estimation_response(response: &str) -> Result<u32> {
         // Clean up response if it contains markdown code blocks
         let clean = response
             .trim()
@@ -120,11 +136,16 @@ impl AiService {
 
         json["estimated_seconds"]
             .as_u64()
-            .map(|s| s as u32)
+            .and_then(|s| u32::try_from(s).ok())
             .context("JSON missing estimated_seconds field")
     }
 
     /// Classify context into a semantic category
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AI provider fails to generate a response or
+    /// the response cannot be parsed as a valid classification.
     pub async fn classify_context(&self, context: &str) -> Result<ClassificationResponse> {
         let prompt = format!(
             "Analyze the following user activity context and classify it.\n\

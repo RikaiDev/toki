@@ -1,18 +1,19 @@
 /// Data management command handlers (export, delete)
 use anyhow::Result;
 use chrono::{Duration, Utc};
+use std::fmt::Write;
 use toki_storage::Database;
 
 use super::helpers::escape_csv;
 
-pub fn handle_data_export(format: String, output: Option<String>) -> Result<()> {
+pub fn handle_data_export(format: &str, output: Option<String>) -> Result<()> {
     let db = Database::new(None)?;
     let end = Utc::now();
     let start = end - Duration::days(365);
 
     let output_path = output.unwrap_or_else(|| format!("toki_export.{format}"));
 
-    match format.as_str() {
+    match format {
         "json" => {
             let activities = db.get_activities(start, end)?;
             let json = serde_json::to_string_pretty(&activities)?;
@@ -27,8 +28,9 @@ pub fn handle_data_export(format: String, output: Option<String>) -> Result<()> 
             );
 
             for span in &spans {
-                csv_content.push_str(&format!(
-                    "{},{},{},{},{},{},{},{}\n",
+                let _ = writeln!(
+                    csv_content,
+                    "{},{},{},{},{},{},{},{}",
                     span.id,
                     escape_csv(&span.app_bundle_id),
                     escape_csv(&span.category),
@@ -39,7 +41,7 @@ pub fn handle_data_export(format: String, output: Option<String>) -> Result<()> 
                         .map(|id| id.to_string())
                         .unwrap_or_default(),
                     span.session_id.map(|id| id.to_string()).unwrap_or_default(),
-                ));
+                );
             }
 
             std::fs::write(&output_path, csv_content)?;
@@ -53,10 +55,10 @@ pub fn handle_data_export(format: String, output: Option<String>) -> Result<()> 
     Ok(())
 }
 
-pub fn handle_data_delete(period: String) -> Result<()> {
+pub fn handle_data_delete(period: &str) -> Result<()> {
     let db = Database::new(None)?;
 
-    let (start, end) = match period.as_str() {
+    let (start, end) = match period {
         "today" => {
             let start = Utc::now()
                 .date_naive()

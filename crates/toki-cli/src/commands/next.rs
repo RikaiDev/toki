@@ -127,7 +127,7 @@ fn check_time_constraint(estimated_seconds: u32, max_seconds: Option<u32>) -> Op
     if estimated_seconds > max {
         return Some((false, 0.0, None)); // Filter out
     }
-    let fit_ratio = estimated_seconds as f32 / max as f32;
+    let fit_ratio = f64::from(estimated_seconds) / f64::from(max);
     if fit_ratio > 0.5 && fit_ratio <= 1.0 {
         Some((true, 15.0, Some("fits available time well".to_string())))
     } else {
@@ -162,22 +162,19 @@ fn calculate_embedding_bonus(
     recent_issue_ids: &[String],
     db: &Database,
 ) -> (f32, Option<String>) {
-    let issue_embedding = match &issue.embedding {
-        Some(e) => e,
-        None => return (0.0, None),
+    let Some(issue_embedding) = &issue.embedding else {
+        return (0.0, None);
     };
 
     let mut bonus = 0.0f32;
     let mut reason = None;
 
     for recent_id in recent_issue_ids {
-        let recent_issue = match db.get_issue_candidate_by_external_id(recent_id) {
-            Ok(Some(i)) => i,
-            _ => continue,
+        let Ok(Some(recent_issue)) = db.get_issue_candidate_by_external_id(recent_id) else {
+            continue;
         };
-        let recent_embedding = match &recent_issue.embedding {
-            Some(e) => e,
-            None => continue,
+        let Some(recent_embedding) = &recent_issue.embedding else {
+            continue;
         };
 
         let similarity = cosine_similarity(issue_embedding, recent_embedding);

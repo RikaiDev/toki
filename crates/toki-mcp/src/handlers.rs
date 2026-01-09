@@ -2,6 +2,7 @@
 //!
 //! Implements the actual functionality for each tool.
 
+use std::fmt::Write;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -105,26 +106,28 @@ fn format_sync_output(report: &IssueSyncReport, results: &[SyncResult]) -> Strin
     for result in results {
         match &result.outcome {
             SyncOutcome::Created { issue_number, issue_url } => {
-                output.push_str(&format!(
-                    "[CREATED] #{} {} -> {}\n",
+                let _ = writeln!(
+                    output,
+                    "[CREATED] #{} {} -> {}",
                     issue_number, result.title, issue_url
-                ));
+                );
             }
             SyncOutcome::Skipped { reason } => {
-                output.push_str(&format!("[SKIPPED] {} - {}\n", result.title, reason));
+                let _ = writeln!(output, "[SKIPPED] {} - {}", result.title, reason);
             }
             SyncOutcome::Failed { error } => {
-                output.push_str(&format!("[FAILED] {} - {}\n", result.title, error));
+                let _ = writeln!(output, "[FAILED] {} - {}", result.title, error);
             }
             SyncOutcome::WouldCreate => {
-                output.push_str(&format!("[WOULD CREATE] {}\n", result.title));
+                let _ = writeln!(output, "[WOULD CREATE] {}", result.title);
             }
         }
     }
-    output.push_str(&format!(
+    let _ = write!(
+        output,
         "\nSummary: {} created, {} skipped, {} failed",
         report.created, report.skipped, report.failed
-    ));
+    );
     output
 }
 
@@ -162,7 +165,7 @@ impl TokiService {
             .get_integration_config("github")?
             .ok_or_else(|| anyhow::anyhow!("GitHub not configured. Set github.token first."))?;
 
-        GitHubClient::new(config.api_key, repo.to_string()).context("Failed to create GitHub client")
+        GitHubClient::new(&config.api_key, repo.to_string()).context("Failed to create GitHub client")
     }
 
     /// Get GitLab client if configured
@@ -173,17 +176,17 @@ impl TokiService {
             .ok_or_else(|| anyhow::anyhow!("GitLab not configured. Set gitlab.token first."))?;
 
         let client = if let Some(url) = api_url {
-            GitLabClient::with_base_url(config.api_key, project.to_string(), url.to_string())
+            GitLabClient::with_base_url(&config.api_key, project, url)
         } else if !config.api_url.is_empty() {
-            GitLabClient::with_base_url(config.api_key, project.to_string(), config.api_url)
+            GitLabClient::with_base_url(&config.api_key, project, &config.api_url)
         } else {
-            GitLabClient::new(config.api_key, project.to_string())
+            GitLabClient::new(&config.api_key, project)
         };
 
         client.context("Failed to create GitLab client")
     }
 
-    fn format_error(e: anyhow::Error) -> McpError {
+    fn format_error(e: &anyhow::Error) -> McpError {
         McpError::internal_error(e.to_string(), None)
     }
 }
@@ -193,12 +196,12 @@ impl TokiService {
     /// List all accessible Notion databases
     #[tool(description = "List all accessible Notion databases. Returns database IDs and titles.")]
     async fn notion_list_databases(&self) -> Result<CallToolResult, McpError> {
-        let client = self.get_notion_client().map_err(Self::format_error)?;
+        let client = self.get_notion_client().map_err(|e| Self::format_error(&e))?;
 
         let databases = client
             .list_databases()
             .await
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         if databases.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -212,7 +215,7 @@ impl TokiService {
                 .title
                 .first()
                 .map_or("Untitled", |t| t.plain_text.as_str());
-            result.push_str(&format!("- {} (ID: {})\n", title, db.id));
+            let _ = writeln!(result, "- {} (ID: {})", title, db.id);
         }
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -224,19 +227,19 @@ impl TokiService {
         &self,
         Parameters(req): Parameters<ListPagesRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let client = self.get_notion_client().map_err(Self::format_error)?;
+        let client = self.get_notion_client().map_err(|e| Self::format_error(&e))?;
 
         let pages = client
             .query_database_all(&req.database_id)
             .await
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         if pages.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text("No pages found.")]));
         }
 
         let db_info = client.get_database(&req.database_id).await
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
         let mapping = db_info.detect_property_mapping(None);
 
         let mut result = format!("Pages in database ({} total):\n\n", pages.len());
@@ -250,7 +253,7 @@ impl TokiService {
                 .and_then(toki_integrations::NotionPropertyValue::as_select_name)
                 .unwrap_or_else(|| "-".to_string());
             let external_id = NotionClient::generate_external_id(&req.database_id, &page.id);
-            result.push_str(&format!("- {title} [{status}] (ID: {external_id})\n"));
+            let _ = writeln!(result, "- {title} [{status}] (ID: {external_id})");
         }
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -261,8 +264,8 @@ impl TokiService {
         &self,
         Parameters(req): Parameters<SyncToGitHubRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let notion_client = Arc::new(self.get_notion_client().map_err(Self::format_error)?);
-        let github_client = self.get_github_client(&req.repo).map_err(Self::format_error)?;
+        let notion_client = Arc::new(self.get_notion_client().map_err(|e| Self::format_error(&e))?);
+        let github_client = self.get_github_client(&req.repo).map_err(|e| Self::format_error(&e))?;
         let sync_service = NotionIssueSyncService::new(notion_client, self.db.clone());
 
         let options = SyncOptions::default();
@@ -270,7 +273,7 @@ impl TokiService {
         let (report, results) = sync_service
             .sync_database(&req.database_id, &github_client, &req.repo, None, &options)
             .await
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         let output = format_sync_output(&report, &results);
         Ok(CallToolResult::success(vec![Content::text(output)]))
@@ -282,8 +285,8 @@ impl TokiService {
         &self,
         Parameters(req): Parameters<SyncToGitLabRequest>,
     ) -> Result<CallToolResult, McpError> {
-        let notion_client = Arc::new(self.get_notion_client().map_err(Self::format_error)?);
-        let gitlab_client = self.get_gitlab_client(&req.project, None).map_err(Self::format_error)?;
+        let notion_client = Arc::new(self.get_notion_client().map_err(|e| Self::format_error(&e))?);
+        let gitlab_client = self.get_gitlab_client(&req.project, None).map_err(|e| Self::format_error(&e))?;
         let sync_service = NotionIssueSyncService::new(notion_client, self.db.clone());
 
         let options = SyncOptions::default();
@@ -291,7 +294,7 @@ impl TokiService {
         let (report, results) = sync_service
             .sync_database(&req.database_id, &gitlab_client, &req.project, None, &options)
             .await
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         let output = format_sync_output(&report, &results);
         Ok(CallToolResult::success(vec![Content::text(output)]))
@@ -305,7 +308,7 @@ impl TokiService {
     ) -> Result<CallToolResult, McpError> {
         let synced = self.db
             .get_synced_issues_for_database(&req.database_id)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         if synced.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -315,8 +318,8 @@ impl TokiService {
 
         let mut result = format!("Sync history ({} issues synced):\n\n", synced.len());
         for issue in &synced {
-            result.push_str(&format!("- #{} [{}] {} -> {}\n",
-                issue.target_issue_number, issue.target_system, issue.title, issue.target_issue_url));
+            let _ = writeln!(result, "- #{} [{}] {} -> {}",
+                issue.target_issue_number, issue.target_system, issue.title, issue.target_issue_url);
         }
         Ok(CallToolResult::success(vec![Content::text(result)]))
     }
@@ -325,7 +328,7 @@ impl TokiService {
     #[tool(description = "List all tracked projects with their PM system links.")]
     async fn project_list(&self) -> Result<CallToolResult, McpError> {
         let projects = self.db.get_all_projects()
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         if projects.is_empty() {
             return Ok(CallToolResult::success(vec![Content::text(
@@ -335,9 +338,9 @@ impl TokiService {
 
         let mut result = format!("Tracked projects ({}):\n\n", projects.len());
         for project in &projects {
-            result.push_str(&format!("- {} ({})\n", project.name, project.path));
+            let _ = writeln!(result, "- {} ({})", project.name, project.path);
             if let Some(pm) = &project.pm_system {
-                result.push_str(&format!("  PM: {} - {}\n", pm, project.pm_project_id.as_deref().unwrap_or("-")));
+                let _ = writeln!(result, "  PM: {} - {}", pm, project.pm_project_id.as_deref().unwrap_or("-"));
             }
         }
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -387,17 +390,17 @@ impl TokiService {
         match section {
             "notion" | "github" | "gitlab" | "plane" => {
                 let mut config = self.db.get_integration_config(section)
-                    .map_err(Self::format_error)?
+                    .map_err(|e| Self::format_error(&e))?
                     .unwrap_or_else(|| IntegrationConfig::new(section.to_string(), String::new(), String::new()));
 
                 match field {
-                    "api_key" | "token" => config.api_key = req.value.clone(),
-                    "api_url" | "url" => config.api_url = req.value.clone(),
+                    "api_key" | "token" => config.api_key.clone_from(&req.value),
+                    "api_url" | "url" => config.api_url.clone_from(&req.value),
                     _ => return Ok(CallToolResult::success(vec![Content::text(format!("Unknown field: {field}"))])),
                 }
 
                 config.updated_at = chrono::Utc::now();
-                self.db.upsert_integration_config(&config).map_err(Self::format_error)?;
+                self.db.upsert_integration_config(&config).map_err(|e| Self::format_error(&e))?;
                 Ok(CallToolResult::success(vec![Content::text(format!("Set {} successfully", req.key))]))
             }
             _ => Ok(CallToolResult::success(vec![Content::text(format!("Unknown section: {section}"))])),
@@ -417,16 +420,16 @@ impl TokiService {
         let git_detector = GitDetector::new();
         let repo_path = git_detector
             .find_repo(&working_dir)
-            .map_err(Self::format_error)?
-            .ok_or_else(|| Self::format_error(anyhow::anyhow!("No git repository found in {}", working_dir.display())))?;
+            .map_err(|e| Self::format_error(&e))?
+            .ok_or_else(|| Self::format_error(&anyhow::anyhow!("No git repository found in {}", working_dir.display())))?;
 
         // Collect git signals
         let branch = git_detector.get_branch_name(&repo_path)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
         let commits = git_detector.get_recent_commits(&repo_path, 5)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
         let files = git_detector.get_changed_files(&repo_path)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         let signals = ActivitySignals {
             git_branch: branch.clone(),
@@ -439,34 +442,34 @@ impl TokiService {
         // Build context output
         let mut result = String::from("Git Context Analysis:\n\n");
         if let Some(ref b) = branch {
-            result.push_str(&format!("Branch: {b}\n"));
+            let _ = writeln!(result, "Branch: {b}");
         }
         if !commits.is_empty() {
             result.push_str("Recent commits:\n");
             for c in &commits {
-                result.push_str(&format!("  - {c}\n"));
+                let _ = writeln!(result, "  - {c}");
             }
         }
         if !files.is_empty() {
-            result.push_str(&format!("Changed files: {} files\n", files.len()));
+            let _ = writeln!(result, "Changed files: {} files", files.len());
         }
         result.push('\n');
 
         // Find project
         let project = self.db
             .get_project_by_path(repo_path.to_string_lossy().as_ref())
-            .map_err(Self::format_error)?
-            .ok_or_else(|| Self::format_error(anyhow::anyhow!(
+            .map_err(|e| Self::format_error(&e))?
+            .ok_or_else(|| Self::format_error(&anyhow::anyhow!(
                 "No project found for {}. Run 'toki init' in this directory first.",
                 repo_path.display()
             )))?;
 
         // Create matcher and find suggestions
         let matcher = SmartIssueMatcher::new(self.db.clone())
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         let suggestions = matcher.find_best_matches(&signals, project.id, max_suggestions)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         if suggestions.is_empty() {
             result.push_str("No matching issues found.\n\n");
@@ -479,16 +482,17 @@ impl TokiService {
 
         result.push_str("Suggested Issues:\n\n");
         for (i, suggestion) in suggestions.iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let confidence_pct = (suggestion.confidence * 100.0).round() as u32;
             let reasons = SmartIssueMatcher::format_reasons(&suggestion.match_reasons);
 
             // Get issue title from database
             let issue_title = self.db
                 .get_issue_candidate_by_external_id(&suggestion.issue_id)
-                .map_err(Self::format_error)?.map_or_else(|| "(title not found)".to_string(), |c| c.title);
+                .map_err(|e| Self::format_error(&e))?.map_or_else(|| "(title not found)".to_string(), |c| c.title);
 
-            result.push_str(&format!("{}. {} - {} ({}% confidence)\n", i + 1, suggestion.issue_id, issue_title, confidence_pct));
-            result.push_str(&format!("   Matched by: {reasons}\n\n"));
+            let _ = writeln!(result, "{}. {} - {} ({}% confidence)", i + 1, suggestion.issue_id, issue_title, confidence_pct);
+            let _ = writeln!(result, "   Matched by: {reasons}\n");
         }
 
         Ok(CallToolResult::success(vec![Content::text(result)]))
@@ -518,12 +522,12 @@ impl TokiService {
             // Try to find project by name or path
             let project_info = self.db
                 .get_project_by_name(project)
-                .map_err(Self::format_error)?
+                .map_err(|e| Self::format_error(&e))?
                 .or_else(|| self.db.get_project_by_path(project).ok().flatten());
 
             match project_info {
                 Some(p) => generator.generate_for_project(&p.path, period)
-                    .map_err(Self::format_error)?,
+                    .map_err(|e| Self::format_error(&e))?,
                 None => {
                     return Ok(CallToolResult::success(vec![Content::text(
                         format!("Project not found: {project}")
@@ -532,7 +536,7 @@ impl TokiService {
             }
         } else {
             generator.generate(period)
-                .map_err(Self::format_error)?
+                .map_err(|e| Self::format_error(&e))?
         };
 
         let format = req.format.as_deref().unwrap_or("text");
@@ -581,7 +585,7 @@ impl TokiService {
         };
 
         let report = generator.generate(parsed_date)
-            .map_err(Self::format_error)?;
+            .map_err(|e| Self::format_error(&e))?;
 
         let format = StandupFormat::parse(req.format.as_deref().unwrap_or("text"));
         let output = report.format(format);

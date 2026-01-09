@@ -35,6 +35,11 @@ impl RelevanceStatus {
 }
 
 impl GravityCalculator {
+    /// Create a new gravity calculator
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedding service fails to initialize
     pub fn new(database: Arc<Database>) -> Result<Self> {
         Ok(Self {
             embedding_service: Mutex::new(EmbeddingService::new()?),
@@ -44,9 +49,13 @@ impl GravityCalculator {
 
     /// Calculate gravity score for a specific text against a project context
     /// Returns a score between 0.0 and 1.0
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedding service fails to generate embeddings
     pub fn calculate_gravity(&self, text: &str, project_id: Uuid) -> Result<f32> {
         // 1. Get project context vector (cached or compute)
-        let context_vector = self.get_project_vector(project_id)?;
+        let context_vector = self.get_project_vector(project_id);
         
         if context_vector.is_empty() {
             // No context available yet, assume neutral relevance
@@ -65,10 +74,10 @@ impl GravityCalculator {
     }
 
     /// Get or compute the project context vector
-    fn get_project_vector(&self, project_id: Uuid) -> Result<Vec<f32>> {
+    fn get_project_vector(&self, project_id: Uuid) -> Vec<f32> {
         // 1. Try to fetch stored embedding from DB
         if let Ok(Some(embedding)) = self.database.get_project_embedding(project_id) {
-            return Ok(embedding);
+            return embedding;
         }
 
         // 2. If not found, return empty for now
@@ -76,15 +85,19 @@ impl GravityCalculator {
         // - Fetch recent signals for the project (git commits, files, etc.)
         // - Generate embedding for the combined text
         // - Save it to DB
-        
+
         // For now, let's assume we need to compute it manually or it doesn't exist
-        Ok(Vec::new())
+        Vec::new()
     }
 
     /// Calculate gravity for a window title against a set of context signals
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedding service fails to generate embeddings
     pub fn calculate_context_gravity(
-        &self, 
-        window_title: &str, 
+        &self,
+        window_title: &str,
         context_text: &str
     ) -> Result<f32> {
         if context_text.trim().is_empty() {

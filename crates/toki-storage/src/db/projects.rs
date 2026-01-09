@@ -229,6 +229,10 @@ impl Database {
     // ==================== Embedding Methods ====================
 
     /// Save project embedding
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails
     pub fn save_project_embedding(&self, project_id: uuid::Uuid, embedding: &[f32]) -> Result<()> {
         // Store as BLOB (raw bytes)
         // Using standard f32 representation
@@ -242,6 +246,10 @@ impl Database {
     }
 
     /// Get project embedding
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails
     pub fn get_project_embedding(&self, project_id: uuid::Uuid) -> Result<Option<Vec<f32>>> {
         let result = self
             .conn

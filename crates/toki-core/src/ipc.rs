@@ -43,6 +43,11 @@ impl IpcClient {
         }
     }
 
+    /// Sends a command to the daemon via IPC.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection or serialization fails.
     pub async fn send_command(&self, request: IpcRequest) -> Result<IpcResponse> {
         let mut stream = UnixStream::connect(&self.sock_path).await?;
 
@@ -90,6 +95,11 @@ impl DaemonIpcHandler {
         *lock = chrono::Utc::now();
     }
 
+    /// Handles an incoming IPC request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization or writing to the stream fails.
     pub async fn handle(
         &self,
         stream: &mut UnixStream,
@@ -106,7 +116,7 @@ impl DaemonIpcHandler {
                     running: true,
                     current_window: window.clone(),
                     current_issue: issue.clone(),
-                    session_duration: duration.num_seconds() as u64,
+                    session_duration: duration.num_seconds().unsigned_abs(),
                 }
             }
             IpcRequest::Shutdown => {
@@ -121,6 +131,11 @@ impl DaemonIpcHandler {
     }
 }
 
+/// Listens for incoming IPC connections.
+///
+/// # Errors
+///
+/// Returns an error if binding to the socket fails.
 pub async fn listen(handler: Arc<DaemonIpcHandler>, sock_path: &Path) -> io::Result<()> {
     if sock_path.exists() {
         fs::remove_file(sock_path)?;

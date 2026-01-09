@@ -166,15 +166,22 @@ async fn handle_pages_schema(client: &NotionClient, database: &str) -> Result<()
     let mapping = db_info.detect_property_mapping(None);
 
     for (name, schema) in &db_info.properties {
-        let detected = match () {
-            _ if mapping.title.as_ref() == Some(name) => "-> title",
-            _ if mapping.status.as_ref() == Some(name) => "-> status",
-            _ if mapping.description.as_ref() == Some(name) => "-> description",
-            _ if mapping.time.as_ref() == Some(name) => "-> time",
-            _ if mapping.priority.as_ref() == Some(name) => "-> priority",
-            _ if mapping.assignee.as_ref() == Some(name) => "-> assignee",
-            _ if mapping.due_date.as_ref() == Some(name) => "-> due_date",
-            _ => "",
+        let detected = if mapping.title.as_ref() == Some(name) {
+            "-> title"
+        } else if mapping.status.as_ref() == Some(name) {
+            "-> status"
+        } else if mapping.description.as_ref() == Some(name) {
+            "-> description"
+        } else if mapping.time.as_ref() == Some(name) {
+            "-> time"
+        } else if mapping.priority.as_ref() == Some(name) {
+            "-> priority"
+        } else if mapping.assignee.as_ref() == Some(name) {
+            "-> assignee"
+        } else if mapping.due_date.as_ref() == Some(name) {
+            "-> due_date"
+        } else {
+            ""
         };
         println!("{:<30} {:<15} {detected}", name, &schema.property_type);
     }
@@ -234,16 +241,14 @@ async fn handle_sync_to_github(
     params: SyncParams,
     repo: String,
 ) -> Result<()> {
-    let github_token = match db.get_integration_config("github")? {
-        Some(c) => c.api_key,
-        None => {
-            println!("GitHub is not configured.");
-            println!("Run 'toki config set github.token <your-token>' first.");
-            return Ok(());
-        }
+    let Some(github_config) = db.get_integration_config("github")? else {
+        println!("GitHub is not configured.");
+        println!("Run 'toki config set github.token <your-token>' first.");
+        return Ok(());
     };
+    let github_token = github_config.api_key;
 
-    let github_client = GitHubClient::new(github_token, repo.clone())?;
+    let github_client = GitHubClient::new(&github_token, repo.clone())?;
     let sync_service = NotionIssueSyncService::new(Arc::new(client), Arc::new(db));
     let options = SyncOptions {
         dry_run: params.dry_run,
@@ -273,18 +278,16 @@ async fn handle_sync_to_gitlab(
     project: String,
     gitlab_url: Option<String>,
 ) -> Result<()> {
-    let gitlab_token = match db.get_integration_config("gitlab")? {
-        Some(c) => c.api_key,
-        None => {
-            println!("GitLab is not configured.");
-            println!("Run 'toki config set gitlab.token <your-token>' first.");
-            return Ok(());
-        }
+    let Some(gitlab_config) = db.get_integration_config("gitlab")? else {
+        println!("GitLab is not configured.");
+        println!("Run 'toki config set gitlab.token <your-token>' first.");
+        return Ok(());
     };
+    let gitlab_token = gitlab_config.api_key;
 
-    let gitlab_client = match gitlab_url {
-        Some(url) => GitLabClient::with_base_url(gitlab_token, project.clone(), url)?,
-        None => GitLabClient::new(gitlab_token, project.clone())?,
+    let gitlab_client = match &gitlab_url {
+        Some(url) => GitLabClient::with_base_url(&gitlab_token, &project, url)?,
+        None => GitLabClient::new(&gitlab_token, &project)?,
     };
 
     let sync_service = NotionIssueSyncService::new(Arc::new(client), Arc::new(db));
@@ -352,17 +355,14 @@ pub async fn handle_notion_command(action: NotionAction) -> Result<()> {
     let db = Database::new(None)?;
 
     // Get Notion configuration
-    let config = match db.get_integration_config("notion")? {
-        Some(c) => c,
-        None => {
-            println!("Notion is not configured.");
-            println!("Run 'toki config set notion.api_key <your-integration-token>' first.");
-            println!("\nTo get a Notion integration token:");
-            println!("  1. Go to https://www.notion.so/my-integrations");
-            println!("  2. Create a new integration");
-            println!("  3. Copy the Internal Integration Token");
-            return Ok(());
-        }
+    let Some(config) = db.get_integration_config("notion")? else {
+        println!("Notion is not configured.");
+        println!("Run 'toki config set notion.api_key <your-integration-token>' first.");
+        println!("\nTo get a Notion integration token:");
+        println!("  1. Go to https://www.notion.so/my-integrations");
+        println!("  2. Create a new integration");
+        println!("  3. Copy the Internal Integration Token");
+        return Ok(());
     };
 
     let client = NotionClient::new(config.api_key.clone())?;

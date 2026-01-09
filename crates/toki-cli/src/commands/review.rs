@@ -8,7 +8,7 @@ use toki_storage::{Database, TimeBlock};
 /// Handle the review command - show daily activity summary with AI suggestions
 #[allow(clippy::cognitive_complexity)]
 #[allow(clippy::too_many_lines)]
-pub async fn handle_review_command(
+pub fn handle_review_command(
     date: Option<String>,
     verbose: bool,
     confirm_all: bool,
@@ -131,7 +131,7 @@ pub async fn handle_review_command(
 
     // Classified vs unclassified
     let classified_pct = if summary.total_active_seconds > 0 {
-        (summary.classified_seconds as f32 / summary.total_active_seconds as f32) * 100.0
+        (f64::from(summary.classified_seconds) / f64::from(summary.total_active_seconds)) * 100.0
     } else {
         0.0
     };
@@ -154,8 +154,9 @@ pub async fn handle_review_command(
         for (project, seconds) in &project_times {
             let hours = seconds / 3600;
             let mins = (seconds % 3600) / 60;
+            #[allow(clippy::cast_precision_loss)]
             let pct = if total_project_secs > 0 {
-                (*seconds as f32 / total_project_secs as f32) * 100.0
+                (f64::from(*seconds) / f64::from(total_project_secs)) * 100.0
             } else {
                 0.0
             };
@@ -193,7 +194,8 @@ pub async fn handle_review_command(
             let start = block.start_time.format("%H:%M");
             let end = block.end_time.format("%H:%M");
             let duration_mins = block.duration_seconds / 60;
-            let confidence_pct = (block.confidence * 100.0) as u32;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let confidence_pct = (block.confidence.clamp(0.0, 1.0) * 100.0) as u32;
 
             println!(
                 "\n{}. {} - {} ({}m) - {}% confidence",

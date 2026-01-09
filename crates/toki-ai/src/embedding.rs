@@ -10,6 +10,10 @@ impl EmbeddingService {
     /// Create a new embedding service with Multilingual-E5-Small model
     /// This will download the model on first run (~100MB)
     /// Multilingual-E5-Small has much better Chinese support than `AllMiniLML6V2`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model fails to load or download.
     pub fn new() -> Result<Self> {
         let model = TextEmbedding::try_new(
             InitOptions::new(EmbeddingModel::MultilingualE5Small)

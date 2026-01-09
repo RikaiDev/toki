@@ -105,6 +105,12 @@ struct GitLabTimeEstimateRequest {
     duration: String,
 }
 
+/// GitLab note (comment) request
+#[derive(Serialize)]
+struct NoteRequest<'a> {
+    body: &'a str,
+}
+
 impl GitLabClient {
     /// Create a new GitLab client for gitlab.com
     ///
@@ -114,8 +120,8 @@ impl GitLabClient {
     ///
     /// # Errors
     /// Returns an error if the HTTP client cannot be created
-    pub fn new(token: String, project: String) -> Result<Self> {
-        Self::with_base_url(token, project, "https://gitlab.com/api/v4".to_string())
+    pub fn new(token: &str, project: &str) -> Result<Self> {
+        Self::with_base_url(token, project, "https://gitlab.com/api/v4")
     }
 
     /// Create a new GitLab client with custom API base URL (for self-hosted)
@@ -127,11 +133,11 @@ impl GitLabClient {
     ///
     /// # Errors
     /// Returns an error if the HTTP client cannot be created
-    pub fn with_base_url(token: String, project: String, api_base: String) -> Result<Self> {
+    pub fn with_base_url(token: &str, project: &str, api_base: &str) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             "PRIVATE-TOKEN",
-            header::HeaderValue::from_str(&token).context("Invalid token format")?,
+            header::HeaderValue::from_str(token).context("Invalid token format")?,
         );
         headers.insert(
             header::CONTENT_TYPE,
@@ -148,7 +154,7 @@ impl GitLabClient {
             .context("Failed to create HTTP client")?;
 
         // URL-encode the project path if it contains slashes
-        let encoded_project = urlencoding::encode(&project).into_owned();
+        let encoded_project = urlencoding::encode(project).into_owned();
 
         Ok(Self {
             client,
@@ -357,11 +363,6 @@ impl GitLabClient {
             "{}/projects/{}/issues/{}/notes",
             self.api_base, self.project, issue_iid
         );
-
-        #[derive(Serialize)]
-        struct NoteRequest<'a> {
-            body: &'a str,
-        }
 
         self.client
             .post(&url)
@@ -615,7 +616,7 @@ mod tests {
     #[test]
     fn test_project_path_encoding() {
         // Test that project paths with slashes are properly encoded
-        let client = GitLabClient::new("test-token".to_string(), "group/project".to_string());
+        let client = GitLabClient::new("test-token", "group/project");
         assert!(client.is_ok());
         let client = client.unwrap();
         assert_eq!(client.project, "group%2Fproject");

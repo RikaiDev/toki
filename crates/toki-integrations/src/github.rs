@@ -93,15 +93,15 @@ impl GitHubClient {
     ///
     /// # Errors
     /// Returns an error if the HTTP client cannot be created
-    pub fn new(token: String, repo: String) -> Result<Self> {
-        Self::with_base_url(token, repo, "https://api.github.com".to_string())
+    pub fn new(token: &str, repo: String) -> Result<Self> {
+        Self::with_base_url(token, repo, "https://api.github.com")
     }
 
     /// Create a new GitHub client with custom API base URL (for GitHub Enterprise)
     ///
     /// # Errors
     /// Returns an error if the HTTP client cannot be created
-    pub fn with_base_url(token: String, repo: String, api_base: String) -> Result<Self> {
+    pub fn with_base_url(token: &str, repo: String, api_base: &str) -> Result<Self> {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,

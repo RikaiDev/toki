@@ -91,10 +91,11 @@ impl TimeBreakdown {
     #[must_use]
     pub fn from_total(total_seconds: u32) -> Self {
         // Typical ratio: 60% implementation, 30% testing, 10% documentation
+        // Use integer arithmetic to avoid float precision warnings
         Self {
-            implementation_seconds: (total_seconds as f32 * 0.60) as u32,
-            testing_seconds: (total_seconds as f32 * 0.30) as u32,
-            documentation_seconds: (total_seconds as f32 * 0.10) as u32,
+            implementation_seconds: total_seconds * 60 / 100,
+            testing_seconds: total_seconds * 30 / 100,
+            documentation_seconds: total_seconds * 10 / 100,
         }
     }
 }
@@ -165,8 +166,8 @@ impl TimeEstimator {
             if let Ok(seconds) = ai.estimate_time_rag(issue, &similar_stats).await {
                 return Ok(TimeEstimate {
                     estimated_seconds: seconds,
-                    low_seconds: (seconds as f32 * 0.8) as u32,
-                    high_seconds: (seconds as f32 * 1.2) as u32,
+                    low_seconds: seconds * 80 / 100,
+                    high_seconds: seconds * 120 / 100,
                     confidence: 0.8, // High confidence for AI
                     similar_issues,
                     method: EstimationMethod::AiRag(ai.model_name().to_string()),
@@ -179,13 +180,13 @@ impl TimeEstimator {
 
         if !similar_issues.is_empty() {
             // Use similar issues for estimation
-            self.estimate_from_similar(&similar_issues, issue.complexity)
+            Ok(Self::estimate_from_similar(&similar_issues, issue.complexity))
         } else if let Some(complexity) = issue.complexity {
             // Fall back to complexity-based estimation
-            Ok(self.estimate_from_complexity(complexity))
+            Ok(Self::estimate_from_complexity(complexity))
         } else {
             // Default estimation based on "moderate" complexity
-            Ok(self.estimate_from_complexity(Complexity::Moderate))
+            Ok(Self::estimate_from_complexity(Complexity::Moderate))
         }
     }
 
@@ -233,45 +234,51 @@ impl TimeEstimator {
 
     /// Estimate from similar issues
     fn estimate_from_similar(
-        &self,
         similar: &[SimilarIssue],
         complexity: Option<Complexity>,
-    ) -> Result<TimeEstimate> {
-        // Weighted average based on similarity
-        let total_weight: f32 = similar.iter().map(|s| s.similarity).sum();
-        let weighted_sum: f32 = similar
+    ) -> TimeEstimate {
+        // Weighted average based on similarity (use f64 for precision)
+        let total_weight: f64 = similar.iter().map(|s| f64::from(s.similarity)).sum();
+        let weighted_sum: f64 = similar
             .iter()
-            .map(|s| s.actual_seconds as f32 * s.similarity)
+            .map(|s| f64::from(s.actual_seconds) * f64::from(s.similarity))
             .sum();
 
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let estimated = (weighted_sum / total_weight) as u32;
 
         // Calculate variance for confidence interval
-        let times: Vec<f32> = similar.iter().map(|s| s.actual_seconds as f32).collect();
-        let mean = estimated as f32;
-        let variance: f32 = times.iter().map(|t| (t - mean).powi(2)).sum::<f32>() / times.len() as f32;
+        let times: Vec<f64> = similar.iter().map(|s| f64::from(s.actual_seconds)).collect();
+        let mean = f64::from(estimated);
+        // similar.len() is at most 5 (truncated in find_similar_issues), safe to cast to u8
+        let len = f64::from(u8::try_from(similar.len()).unwrap_or(5));
+        let variance: f64 = times.iter().map(|t| (t - mean).powi(2)).sum::<f64>() / len;
         let std_dev = variance.sqrt();
 
         // 80% confidence interval (roughly 1.28 standard deviations)
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let low = (mean - 1.28 * std_dev).max(0.0) as u32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let high = (mean + 1.28 * std_dev) as u32;
 
         // Confidence based on number of similar issues and their similarity
-        let avg_similarity: f32 = similar.iter().map(|s| s.similarity).sum::<f32>() / similar.len() as f32;
-        let count_factor = (similar.len() as f32 / 5.0).min(1.0);
+        // similar.len() is at most 5, safe to cast to u8
+        let similar_count = u8::try_from(similar.len()).unwrap_or(5);
+        let avg_similarity: f32 = similar.iter().map(|s| s.similarity).sum::<f32>() / f32::from(similar_count);
+        let count_factor = (f32::from(similar_count) / 5.0).min(1.0);
         let confidence = avg_similarity * count_factor;
 
         // If we have complexity, adjust the estimate
         let (final_estimate, method) = if let Some(c) = complexity {
-            let complexity_estimate = self.estimate_from_complexity(c);
+            let complexity_estimate = Self::estimate_from_complexity(c);
             // Blend: 70% similar issues, 30% complexity-based
-            let blended = (estimated as f32 * 0.7 + complexity_estimate.estimated_seconds as f32 * 0.3) as u32;
+            let blended = estimated * 70 / 100 + complexity_estimate.estimated_seconds * 30 / 100;
             (blended, EstimationMethod::Combined)
         } else {
             (estimated, EstimationMethod::SimilarIssues)
         };
 
-        Ok(TimeEstimate {
+        TimeEstimate {
             estimated_seconds: final_estimate,
             low_seconds: low.min(final_estimate),
             high_seconds: high.max(final_estimate),
@@ -279,23 +286,24 @@ impl TimeEstimator {
             similar_issues: similar.to_vec(),
             method,
             breakdown: Some(TimeBreakdown::from_total(final_estimate)),
-        })
+        }
     }
 
     /// Estimate from complexity alone
-    fn estimate_from_complexity(&self, complexity: Complexity) -> TimeEstimate {
+    fn estimate_from_complexity(complexity: Complexity) -> TimeEstimate {
         // Base estimates in seconds per complexity level
         // Based on typical AI-assisted development times
-        let (base_seconds, low_factor, high_factor) = match complexity {
-            Complexity::Trivial => (5 * 60, 0.5, 2.0),      // 5 min (2.5-10 min)
-            Complexity::Simple => (30 * 60, 0.5, 2.0),     // 30 min (15-60 min)
-            Complexity::Moderate => (2 * 3600, 0.5, 2.0),  // 2 hours (1-4 hours)
-            Complexity::Complex => (6 * 3600, 0.5, 2.0),   // 6 hours (3-12 hours)
-            Complexity::Epic => (20 * 3600, 0.5, 2.5),     // 20 hours (10-50 hours)
+        // Factors are represented as (low_percent, high_percent) to avoid float casting
+        let (base_seconds, low_percent, high_percent) = match complexity {
+            Complexity::Trivial => (5 * 60, 50, 200),      // 5 min (2.5-10 min)
+            Complexity::Simple => (30 * 60, 50, 200),     // 30 min (15-60 min)
+            Complexity::Moderate => (2 * 3600, 50, 200),  // 2 hours (1-4 hours)
+            Complexity::Complex => (6 * 3600, 50, 200),   // 6 hours (3-12 hours)
+            Complexity::Epic => (20 * 3600, 50, 250),     // 20 hours (10-50 hours)
         };
 
-        let low = (base_seconds as f32 * low_factor) as u32;
-        let high = (base_seconds as f32 * high_factor) as u32;
+        let low = base_seconds * low_percent / 100;
+        let high = base_seconds * high_percent / 100;
 
         TimeEstimate {
             estimated_seconds: base_seconds,

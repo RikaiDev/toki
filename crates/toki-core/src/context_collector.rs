@@ -116,6 +116,10 @@ impl ContextCollector {
     }
 
     /// Collect git branch signal from a workspace path
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if git detection fails.
     pub fn collect_git_branch(&mut self, workspace_path: &Path) -> Result<Option<String>> {
         if let Ok(Some(issue_id)) = self.git_detector.detect_from_git(workspace_path) {
             let branch_name = issue_id.full_id();

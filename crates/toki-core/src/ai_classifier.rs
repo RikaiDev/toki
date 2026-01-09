@@ -1,5 +1,6 @@
 use anyhow::Result;
 use lru::LruCache;
+use std::fmt::Write;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -18,19 +19,24 @@ pub struct ContextSnapshot {
 impl ContextSnapshot {
     #[must_use] pub fn to_prompt_text(&self) -> String {
         let mut text = String::new();
-        text.push_str(&format!("App: {}\n", self.app_id));
+        let _ = writeln!(text, "App: {}", self.app_id);
         if let Some(title) = &self.window_title {
-            text.push_str(&format!("Window Title: {title}\n"));
+            let _ = writeln!(text, "Window Title: {title}");
         }
         if let Some(branch) = &self.git_branch {
-            text.push_str(&format!("Git Branch: {branch}\n"));
+            let _ = writeln!(text, "Git Branch: {branch}");
         }
         if let Some(project) = &self.project_name {
-            text.push_str(&format!("Project: {project}\n"));
+            let _ = writeln!(text, "Project: {project}");
         }
         text
     }
 }
+
+const DEFAULT_CACHE_SIZE: NonZeroUsize = match NonZeroUsize::new(100) {
+    Some(v) => v,
+    None => unreachable!(),
+};
 
 /// Semantic classifier using AI with caching
 pub struct AiClassifier {
@@ -40,7 +46,7 @@ pub struct AiClassifier {
 
 impl AiClassifier {
     #[must_use] pub fn new(ai_service: Arc<AiService>, cache_size: usize) -> Self {
-        let cache_size = NonZeroUsize::new(cache_size).unwrap_or(NonZeroUsize::new(100).unwrap());
+        let cache_size = NonZeroUsize::new(cache_size).unwrap_or(DEFAULT_CACHE_SIZE);
         Self {
             ai_service,
             cache: RwLock::new(LruCache::new(cache_size)),
@@ -48,6 +54,10 @@ impl AiClassifier {
     }
 
     /// Classify the context using AI, with caching
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the AI service fails to classify the context.
     pub async fn classify(&self, context: ContextSnapshot) -> Result<ClassificationResponse> {
         // 1. Check cache
         {

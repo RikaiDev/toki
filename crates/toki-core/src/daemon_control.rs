@@ -31,6 +31,10 @@ impl DaemonControl {
     }
 
     /// Get PID of running daemon
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the PID file exists but cannot be read or parsed
     pub fn get_pid(&self) -> anyhow::Result<Option<u32>> {
         if !self.pid_file.exists() {
             return Ok(None);
@@ -39,6 +43,10 @@ impl DaemonControl {
     }
 
     /// Remove PID file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the PID file exists but cannot be removed
     pub fn remove_pid(&self) -> anyhow::Result<()> {
         if self.pid_file.exists() {
             std::fs::remove_file(&self.pid_file)?;

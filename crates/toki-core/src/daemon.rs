@@ -33,6 +33,13 @@ pub struct Daemon {
 }
 
 impl Daemon {
+    /// Create a new daemon instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The system monitor cannot be created
+    /// - The classifier cannot be initialized from the database
     pub fn new(db: Database, tick_interval_seconds: u64) -> Result<Self> {
         let db_arc = Arc::new(db);
         let shutdown_signal = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -77,6 +84,14 @@ impl Daemon {
         })
     }
 
+    /// Run the daemon with signal handling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The IPC socket path cannot be determined
+    /// - A tick operation fails
+    /// - Finalizing spans or sessions fails during shutdown
     pub async fn run_with_signals(&mut self) -> Result<()> {
         let sock_path = get_data_dir()?.join("toki.sock");
         let ipc_handler = self.ipc_handler.clone();
@@ -112,7 +127,7 @@ impl Daemon {
         }
 
         // Finalize current activity and session on shutdown
-        self.finalize_current_span().await?;
+        self.finalize_current_span()?;
         self.finalize_current_session()?;
         log::info!("Daemon shut down gracefully.");
         Ok(())
@@ -122,11 +137,11 @@ impl Daemon {
     async fn tick(&mut self) -> Result<()> {
         let settings = self.database.get_settings()?;
         let now = chrono::Utc::now();
-        let tick_seconds = self.tick_interval_seconds as u32;
+        let tick_seconds = u32::try_from(self.tick_interval_seconds).unwrap_or(u32::MAX);
 
         // Check if tracking is paused
         if settings.pause_tracking {
-            self.finalize_current_span().await?;
+            self.finalize_current_span()?;
             self.finalize_current_session()?;
             return Ok(());
         }
@@ -151,7 +166,7 @@ impl Daemon {
 
         if is_idle {
             self.session_idle_seconds += tick_seconds;
-            self.finalize_current_span().await?;
+            self.finalize_current_span()?;
 
             if self
                 .session_manager
@@ -191,28 +206,14 @@ impl Daemon {
 
         if let Some(app) = app_activity {
             if settings.excluded_apps.contains(&app.app_id) {
-                self.finalize_current_span().await?;
+                self.finalize_current_span()?;
                 return Ok(());
             }
 
             // Semantic Classification
-            let category = if let Some(ai) = &self.ai_classifier {
-                 let snapshot = ContextSnapshot {
-                     app_id: app.app_id.clone(),
-                     window_title: window_title.clone(),
-                     git_branch: None,
-                     project_name: project_name.clone(),
-                 };
-                 match ai.classify(snapshot).await {
-                     Ok(res) => res.category,
-                     Err(e) => {
-                         log::debug!("AI classification skipped/failed: {e}");
-                         self.classifier.classify_with_context(&app.app_id, window_title.as_deref())
-                     }
-                 }
-            } else {
-                self.classifier.classify_with_context(&app.app_id, window_title.as_deref())
-            };
+            let category = self
+                .classify_activity(&app.app_id, window_title.as_deref(), project_name.as_deref())
+                .await;
 
             // Only create new span when APP changes (not when project changes within same app)
             // This allows natural multi-window workflows without fragmenting time tracking
@@ -228,23 +229,22 @@ impl Daemon {
                     app.app_name,
                     app.app_id
                 );
-                self.finalize_current_span().await?;
+                self.finalize_current_span()?;
                 self.current_project_id = project_id;
                 self.current_work_item_id = work_item_id;
-                self.start_new_span(app.app_id, category.to_string(), project_id, work_item_id)
-                    .await?;
+                self.start_new_span(app.app_id, category.to_string(), project_id, work_item_id)?;
             } else {
                 // App is the same - update project tracking without creating new span
                 // Track time spent per project in parallel
                 if let Some(pid) = project_id {
-                    self.track_project_time(pid).await?;
+                    self.track_project_time(pid)?;
                 }
                 // Update current context (for IPC status display)
                 self.current_project_id = project_id;
                 self.current_work_item_id = work_item_id;
             }
         } else {
-            self.finalize_current_span().await?;
+            self.finalize_current_span()?;
         }
 
         // Update session stats periodically
@@ -260,6 +260,32 @@ impl Daemon {
         }
 
         Ok(())
+    }
+
+    /// Classify the activity using AI or fallback classifier.
+    async fn classify_activity(
+        &self,
+        app_id: &str,
+        window_title: Option<&str>,
+        project_name: Option<&str>,
+    ) -> String {
+        if let Some(ai) = &self.ai_classifier {
+            let snapshot = ContextSnapshot {
+                app_id: app_id.to_string(),
+                window_title: window_title.map(String::from),
+                git_branch: None,
+                project_name: project_name.map(String::from),
+            };
+            match ai.classify(snapshot).await {
+                Ok(res) => res.category,
+                Err(e) => {
+                    log::debug!("AI classification skipped/failed: {e}");
+                    self.classifier.classify_with_context(app_id, window_title)
+                }
+            }
+        } else {
+            self.classifier.classify_with_context(app_id, window_title)
+        }
     }
 
     /// Detect project (primary) and optionally work item from context
@@ -299,7 +325,7 @@ impl Daemon {
             self.ipc_handler.set_current_issue(Some(project_name.clone())).await;
 
             // Try to detect work item from git (optional)
-            let work_item_id = self.detect_work_item_from_git(&path).await?;
+            let work_item_id = self.detect_work_item_from_git(&path)?;
 
             Some((project.id, work_item_id, Some(project_name)))
         } else {
@@ -314,12 +340,12 @@ impl Daemon {
     }
 
     /// Try to detect work item ID from git branch (optional enrichment)
-    async fn detect_work_item_from_git(
+    fn detect_work_item_from_git(
         &self,
         workspace_path: &std::path::Path,
     ) -> Result<Option<Uuid>> {
         // Use context detector to find issue ID from git
-        if let Ok(Some(work_ref)) = self.context_detector.detect_from_path(workspace_path).await {
+        if let Some(work_ref) = self.context_detector.detect_from_path(workspace_path) {
             let issue_id_str = work_ref.issue_id.full_id();
             let external_system = work_ref.source.to_string();
 
@@ -338,7 +364,7 @@ impl Daemon {
         Ok(None)
     }
 
-    async fn start_new_span(
+    fn start_new_span(
         &mut self,
         app_bundle_id: String,
         category: String,
@@ -361,7 +387,7 @@ impl Daemon {
         Ok(())
     }
 
-    async fn finalize_current_span(&mut self) -> Result<()> {
+    fn finalize_current_span(&mut self) -> Result<()> {
         if let Some(span) = self.current_activity_span.take() {
             self.database
                 .finalize_activity_span(span.id, chrono::Utc::now())?;
@@ -385,8 +411,8 @@ impl Daemon {
 
     /// Track time spent on a project (for multi-window workflows)
     /// This updates `project_time` table without creating new activity spans
-    async fn track_project_time(&mut self, project_id: Uuid) -> Result<()> {
-        let tick_seconds = self.tick_interval_seconds as u32;
+    fn track_project_time(&mut self, project_id: Uuid) -> Result<()> {
+        let tick_seconds = u32::try_from(self.tick_interval_seconds).unwrap_or(u32::MAX);
         self.database
             .add_project_time(project_id, tick_seconds, chrono::Utc::now())?;
         Ok(())

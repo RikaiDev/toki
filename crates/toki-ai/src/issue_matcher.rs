@@ -67,6 +67,10 @@ pub struct IssueMatcher {
 
 impl IssueMatcher {
     /// Create a new issue matcher
+    ///
+    /// # Panics
+    ///
+    /// Panics if the issue ID regex pattern fails to compile (should never happen with valid pattern)
     #[must_use]
     pub fn new() -> Self {
         Self {
@@ -155,7 +159,7 @@ impl IssueMatcher {
 
         // 7. Semantic similarity (keyword matching as fallback)
         for candidate in candidates {
-            let similarity = self.calculate_semantic_similarity(signals, candidate);
+            let similarity = Self::calculate_semantic_similarity(signals, candidate);
             if similarity > 0.3 {
                 if let Some((score, reasons)) = scores.get_mut(&candidate.external_id) {
                     *score += similarity * 0.5;
@@ -191,7 +195,6 @@ impl IssueMatcher {
 
     /// Calculate semantic similarity between signals and candidate issue
     fn calculate_semantic_similarity(
-        &self,
         signals: &ActivitySignals,
         candidate: &CandidateIssue,
     ) -> f32 {
@@ -235,7 +238,9 @@ impl IssueMatcher {
             }
         }
 
-        matches as f32 / total_keywords as f32
+        #[allow(clippy::cast_precision_loss)]
+        let result = matches as f32 / total_keywords as f32;
+        result
     }
 
     /// Suggest issue based on recent activity patterns
@@ -289,7 +294,7 @@ impl IssueMatcher {
                 reasons.push(MatchReason::Assigned);
             }
 
-            let similarity = self.calculate_semantic_similarity(signals, candidate);
+            let similarity = Self::calculate_semantic_similarity(signals, candidate);
             if similarity > 0.2 {
                 score += similarity * 0.4;
                 reasons.push(MatchReason::SemanticSimilarity(similarity));
@@ -343,6 +348,10 @@ impl SmartIssueMatcher {
     /// # Errors
     ///
     /// Returns an error if the embedding service fails to initialize
+    ///
+    /// # Panics
+    ///
+    /// Panics if the issue ID regex pattern fails to compile (should never happen with valid pattern)
     pub fn new(database: Arc<Database>) -> Result<Self> {
         let embedding_service = EmbeddingService::new()?;
         Ok(Self {
@@ -353,6 +362,10 @@ impl SmartIssueMatcher {
     }
 
     /// Create with an existing embedding service (for sharing)
+    ///
+    /// # Panics
+    ///
+    /// Panics if the issue ID regex pattern fails to compile (should never happen with valid pattern)
     #[must_use]
     pub fn with_embedding_service(
         database: Arc<Database>,
@@ -478,7 +491,7 @@ impl SmartIssueMatcher {
 
     /// Generate embedding for activity context
     fn generate_context_embedding(&self, signals: &ActivitySignals) -> Result<Vec<f32>> {
-        let context_text = self.generate_context_text(signals);
+        let context_text = Self::generate_context_text(signals);
 
         let mut service = self
             .embedding_service
@@ -489,7 +502,7 @@ impl SmartIssueMatcher {
     }
 
     /// Generate text representation of activity signals for embedding
-    fn generate_context_text(&self, signals: &ActivitySignals) -> String {
+    fn generate_context_text(signals: &ActivitySignals) -> String {
         let mut parts = Vec::new();
 
         // Git branch (highest signal)
