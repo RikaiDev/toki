@@ -12,7 +12,8 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
     handler::server::wrapper::Parameters,
 };
-use toki_ai::{NotionIssueSyncService, SyncOptions, SyncOutcome};
+use toki_ai::{NotionIssueSyncService, SyncOptions, SyncOutcome, SyncResult};
+use toki_integrations::IssueSyncReport;
 use toki_ai::issue_matcher::{ActivitySignals, SmartIssueMatcher};
 use toki_ai::standup::{StandupFormat, StandupGenerator};
 use toki_ai::work_summary::{SummaryPeriod, WorkSummaryGenerator};
@@ -96,6 +97,35 @@ pub struct GenerateStandupRequest {
     pub format: Option<String>,
     #[schemars(description = "Date to generate standup for (YYYY-MM-DD format, defaults to today)")]
     pub date: Option<String>,
+}
+
+/// Format sync results into a human-readable output string.
+fn format_sync_output(report: &IssueSyncReport, results: &[SyncResult]) -> String {
+    let mut output = String::from("Sync completed:\n\n");
+    for result in results {
+        match &result.outcome {
+            SyncOutcome::Created { issue_number, issue_url } => {
+                output.push_str(&format!(
+                    "[CREATED] #{} {} -> {}\n",
+                    issue_number, result.title, issue_url
+                ));
+            }
+            SyncOutcome::Skipped { reason } => {
+                output.push_str(&format!("[SKIPPED] {} - {}\n", result.title, reason));
+            }
+            SyncOutcome::Failed { error } => {
+                output.push_str(&format!("[FAILED] {} - {}\n", result.title, error));
+            }
+            SyncOutcome::WouldCreate => {
+                output.push_str(&format!("[WOULD CREATE] {}\n", result.title));
+            }
+        }
+    }
+    output.push_str(&format!(
+        "\nSummary: {} created, {} skipped, {} failed",
+        report.created, report.skipped, report.failed
+    ));
+    output
 }
 
 /// Toki MCP Service
@@ -243,24 +273,7 @@ impl TokiService {
             .await
             .map_err(|e| Self::format_error(e.into()))?;
 
-        let mut output = String::from("Sync completed:\n\n");
-        for result in &results {
-            match &result.outcome {
-                SyncOutcome::Created { issue_number, issue_url } => {
-                    output.push_str(&format!("[CREATED] #{} {} -> {}\n", issue_number, result.title, issue_url));
-                }
-                SyncOutcome::Skipped { reason } => {
-                    output.push_str(&format!("[SKIPPED] {} - {}\n", result.title, reason));
-                }
-                SyncOutcome::Failed { error } => {
-                    output.push_str(&format!("[FAILED] {} - {}\n", result.title, error));
-                }
-                SyncOutcome::WouldCreate => {
-                    output.push_str(&format!("[WOULD CREATE] {}\n", result.title));
-                }
-            }
-        }
-        output.push_str(&format!("\nSummary: {} created, {} skipped, {} failed", report.created, report.skipped, report.failed));
+        let output = format_sync_output(&report, &results);
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
@@ -281,24 +294,7 @@ impl TokiService {
             .await
             .map_err(|e| Self::format_error(e.into()))?;
 
-        let mut output = String::from("Sync completed:\n\n");
-        for result in &results {
-            match &result.outcome {
-                SyncOutcome::Created { issue_number, issue_url } => {
-                    output.push_str(&format!("[CREATED] #{} {} -> {}\n", issue_number, result.title, issue_url));
-                }
-                SyncOutcome::Skipped { reason } => {
-                    output.push_str(&format!("[SKIPPED] {} - {}\n", result.title, reason));
-                }
-                SyncOutcome::Failed { error } => {
-                    output.push_str(&format!("[FAILED] {} - {}\n", result.title, error));
-                }
-                SyncOutcome::WouldCreate => {
-                    output.push_str(&format!("[WOULD CREATE] {}\n", result.title));
-                }
-            }
-        }
-        output.push_str(&format!("\nSummary: {} created, {} skipped, {} failed", report.created, report.skipped, report.failed));
+        let output = format_sync_output(&report, &results);
         Ok(CallToolResult::success(vec![Content::text(output)]))
     }
 
