@@ -51,24 +51,31 @@ impl WorkContextDetector {
     /// Returns an error if Git operations fail
     pub async fn detect(
         &self,
-        mut working_dir: Option<&Path>,
+        working_dir: Option<&Path>,
         window_title: Option<&str>,
     ) -> Result<Option<WorkItemRef>> {
-        let mut from_ide = false;
-        // If no working dir, try to get from IDE
-        if working_dir.is_none() {
-            if let Ok(Some(ide_path)) = vscode::get_last_workspace(window_title).await {
-                log::debug!("Got workspace from VSCode: {}", ide_path.display());
-                let static_path: &'static Path = Box::leak(ide_path.into_boxed_path());
-                working_dir = Some(static_path);
-                from_ide = true;
-            } else {
-                log::debug!("Could not get workspace from VSCode.");
+        // Store IDE workspace path locally to avoid memory leak from Box::leak
+        let ide_workspace: Option<PathBuf> = if working_dir.is_none() {
+            match vscode::get_last_workspace(window_title).await {
+                Ok(Some(ide_path)) => {
+                    log::debug!("Got workspace from VSCode: {}", ide_path.display());
+                    Some(ide_path)
+                }
+                _ => {
+                    log::debug!("Could not get workspace from VSCode.");
+                    None
+                }
             }
-        }
+        } else {
+            None
+        };
+
+        // Use either the provided working_dir or the IDE workspace
+        let from_ide = working_dir.is_none() && ide_workspace.is_some();
+        let effective_dir: Option<&Path> = working_dir.or_else(|| ide_workspace.as_deref());
 
         // 1-2. Try Git detection (branch then commit)
-        if let Some(dir) = working_dir {
+        if let Some(dir) = effective_dir {
             log::debug!("Detecting from working directory: {}", dir.display());
             if let Ok(Some(issue_id)) = self.git_detector.detect_from_git(dir) {
                 let source = if from_ide {
