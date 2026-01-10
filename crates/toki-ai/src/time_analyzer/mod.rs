@@ -11,8 +11,11 @@ use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
 use std::fmt::Write;
 
+#[cfg(test)]
+mod tests;
+
 /// Convert i64 seconds to u32, clamping negative values to 0 and large values to `u32::MAX`
-fn seconds_to_u32(seconds: i64) -> u32 {
+pub(crate) fn seconds_to_u32(seconds: i64) -> u32 {
     if seconds <= 0 {
         0
     } else if seconds > i64::from(u32::MAX) {
@@ -26,8 +29,19 @@ fn seconds_to_u32(seconds: i64) -> u32 {
 }
 
 /// Calculate duration in seconds between two timestamps as u32
-fn duration_seconds(start: DateTime<Utc>, end: DateTime<Utc>) -> u32 {
+pub(crate) fn duration_seconds(start: DateTime<Utc>, end: DateTime<Utc>) -> u32 {
     seconds_to_u32((end - start).num_seconds())
+}
+
+/// Format duration
+pub(crate) fn format_duration(seconds: u32) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m")
+    } else {
+        format!("{minutes}m")
+    }
 }
 
 /// Activity segment (for analysis)
@@ -143,7 +157,7 @@ impl TimeAnalyzer {
     }
 
     /// Detect work pattern
-    fn detect_pattern(segment: &ActivitySegment) -> WorkPattern {
+    pub(crate) fn detect_pattern(segment: &ActivitySegment) -> WorkPattern {
         // Infer from file types
         let file_patterns: HashMap<&str, WorkPattern> = [
             ("test", WorkPattern::Debugging),
@@ -214,7 +228,7 @@ impl TimeAnalyzer {
     }
 
     /// Determine if two time segments should be merged
-    fn should_merge_segments(prev_end: Option<DateTime<Utc>>, next_start: DateTime<Utc>) -> bool {
+    pub(crate) fn should_merge_segments(prev_end: Option<DateTime<Utc>>, next_start: DateTime<Utc>) -> bool {
         let Some(end) = prev_end else {
             return false;
         };
@@ -260,7 +274,7 @@ impl TimeAnalyzer {
     }
 
     /// Generate description
-    fn generate_description(segment: &ActivitySegment, pattern: &WorkPattern) -> String {
+    pub(crate) fn generate_description(segment: &ActivitySegment, pattern: &WorkPattern) -> String {
         let project = segment.project_name.as_deref().unwrap_or("unknown");
 
         match pattern {
@@ -282,7 +296,7 @@ impl TimeAnalyzer {
     }
 
     /// Extract possible issues from activity
-    fn extract_issues(segment: &ActivitySegment) -> Vec<SuggestedIssue> {
+    pub(crate) fn extract_issues(segment: &ActivitySegment) -> Vec<SuggestedIssue> {
         let mut issues = Vec::new();
         let issue_pattern = regex::Regex::new(r"(?i)([A-Z]{2,10}-\d+)").unwrap();
 
@@ -329,7 +343,7 @@ impl TimeAnalyzer {
     }
 
     /// Calculate confidence score
-    fn calculate_confidence(issues: &[SuggestedIssue], pattern: &WorkPattern) -> f32 {
+    pub(crate) fn calculate_confidence(issues: &[SuggestedIssue], pattern: &WorkPattern) -> f32 {
         if issues.is_empty() {
             // No issue found, but may be valid work
             return match pattern {
@@ -346,7 +360,7 @@ impl TimeAnalyzer {
     }
 
     /// Generate reasoning explanation
-    fn generate_reasoning(
+    pub(crate) fn generate_reasoning(
         segment: &ActivitySegment,
         pattern: &WorkPattern,
         issues: &[SuggestedIssue],
@@ -509,58 +523,5 @@ impl DailySummaryReport {
         }
 
         report
-    }
-}
-
-/// Format duration
-fn format_duration(seconds: u32) -> String {
-    let hours = seconds / 3600;
-    let minutes = (seconds % 3600) / 60;
-    if hours > 0 {
-        format!("{hours}h {minutes}m")
-    } else {
-        format!("{minutes}m")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_detect_pattern_from_commits() {
-        let segment = ActivitySegment {
-            start_time: Utc::now(),
-            end_time: Utc::now(),
-            project_name: Some("test".to_string()),
-            category: "Coding".to_string(),
-            edited_files: vec![],
-            git_commits: vec!["fix: resolve button bug".to_string()],
-            git_branch: None,
-            browser_urls: vec![],
-        };
-
-        assert_eq!(
-            TimeAnalyzer::detect_pattern(&segment),
-            WorkPattern::Debugging
-        );
-    }
-
-    #[test]
-    fn test_extract_issues_from_branch() {
-        let segment = ActivitySegment {
-            start_time: Utc::now(),
-            end_time: Utc::now(),
-            project_name: None,
-            category: "Coding".to_string(),
-            edited_files: vec![],
-            git_commits: vec![],
-            git_branch: Some("feature/TOKI-42-add-feature".to_string()),
-            browser_urls: vec![],
-        };
-
-        let issues = TimeAnalyzer::extract_issues(&segment);
-        assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].issue_id, "TOKI-42");
     }
 }
