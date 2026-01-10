@@ -5,6 +5,9 @@
 //! - Project name matching: Fuzzy match local project names to PM projects
 //! - Git remote inference: Parse git remote URLs for project hints
 
+#[cfg(test)]
+mod tests;
+
 use anyhow::Result;
 use regex::Regex;
 use std::collections::HashMap;
@@ -53,7 +56,7 @@ impl std::fmt::Display for LinkReason {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
+pub(crate) fn truncate(s: &str, max: usize) -> String {
     if s.len() > max {
         format!("{}...", &s[..max])
     } else {
@@ -384,7 +387,7 @@ impl AutoLinker {
     }
 
     /// Calculate similarity between two project names
-    fn calculate_name_similarity(a: &str, b: &str) -> f32 {
+    pub(crate) fn calculate_name_similarity(a: &str, b: &str) -> f32 {
         if a == b {
             return 1.0;
         }
@@ -408,7 +411,7 @@ impl AutoLinker {
     }
 
     /// Extract remote URL from git config content
-    fn extract_remote_url(config: &str) -> Option<String> {
+    pub(crate) fn extract_remote_url(config: &str) -> Option<String> {
         let url_pattern = Regex::new(r"url\s*=\s*(.+)").ok()?;
 
         for line in config.lines() {
@@ -422,7 +425,7 @@ impl AutoLinker {
     }
 
     /// Extract project name from git URL
-    fn extract_project_from_git_url(url: &str) -> Option<String> {
+    pub(crate) fn extract_project_from_git_url(url: &str) -> Option<String> {
         // Handle SSH format: git@github.com:org/project.git
         if url.contains('@') && url.contains(':') {
             let parts: Vec<&str> = url.split(':').collect();
@@ -441,34 +444,5 @@ impl AutoLinker {
             .split('/')
             .next_back()
             .map(String::from)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_project_from_git_url() {
-        assert_eq!(
-            AutoLinker::extract_project_from_git_url("git@github.com:org/my-project.git"),
-            Some("my-project".to_string())
-        );
-        assert_eq!(
-            AutoLinker::extract_project_from_git_url("https://github.com/org/my-project.git"),
-            Some("my-project".to_string())
-        );
-        assert_eq!(
-            AutoLinker::extract_project_from_git_url("https://github.com/org/my-project"),
-            Some("my-project".to_string())
-        );
-    }
-
-    #[test]
-    fn test_calculate_name_similarity() {
-        assert!((AutoLinker::calculate_name_similarity("hygieia", "hygieia") - 1.0).abs() < 0.01);
-        assert!(AutoLinker::calculate_name_similarity("hygieia", "hygeia") > 0.8);
-        assert!(AutoLinker::calculate_name_similarity("project-a", "project-b") > 0.7);
-        assert!(AutoLinker::calculate_name_similarity("abc", "xyz") < 0.3);
     }
 }
