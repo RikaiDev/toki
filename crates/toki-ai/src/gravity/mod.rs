@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::sync::{Arc, Mutex};
 use anyhow::Result;
 use toki_storage::Database;
