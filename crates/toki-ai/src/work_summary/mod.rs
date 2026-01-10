@@ -13,6 +13,9 @@ use std::sync::Arc;
 
 use toki_storage::{ClaudeSession, Database, Project};
 
+#[cfg(test)]
+mod tests;
+
 /// Summary time period
 #[derive(Debug, Clone, Copy)]
 pub enum SummaryPeriod {
@@ -120,7 +123,7 @@ pub struct WorkSummary {
 
 impl WorkSummary {
     /// Format duration in human-readable form
-    fn format_duration(seconds: u32) -> String {
+    pub(crate) fn format_duration(seconds: u32) -> String {
         let hours = seconds / 3600;
         let minutes = (seconds % 3600) / 60;
 
@@ -416,7 +419,7 @@ impl WorkSummaryGenerator {
     }
 
     /// Generate insights from the data
-    fn generate_insights(
+    pub(crate) fn generate_insights(
         sessions: &[ClaudeSession],
         projects: &[ProjectWorkSummary],
         total_seconds: u32,
@@ -486,7 +489,7 @@ impl WorkSummaryGenerator {
     }
 
     /// Generate suggestions based on the data
-    fn generate_suggestions(
+    pub(crate) fn generate_suggestions(
         sessions: &[ClaudeSession],
         projects: &[ProjectWorkSummary],
     ) -> Vec<String> {
