@@ -8,6 +8,9 @@
 //! - Window title patterns
 //! - Semantic similarity analysis (embedding-based)
 
+#[cfg(test)]
+mod tests;
+
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -186,7 +189,7 @@ impl IssueMatcher {
     }
 
     /// Extract issue IDs from text
-    fn extract_issue_ids(&self, text: &str) -> Vec<String> {
+    pub(crate) fn extract_issue_ids(&self, text: &str) -> Vec<String> {
         self.issue_id_pattern
             .find_iter(text)
             .map(|m| m.as_str().to_uppercase())
@@ -194,7 +197,7 @@ impl IssueMatcher {
     }
 
     /// Calculate semantic similarity between signals and candidate issue
-    fn calculate_semantic_similarity(
+    pub(crate) fn calculate_semantic_similarity(
         signals: &ActivitySignals,
         candidate: &CandidateIssue,
     ) -> f32 {
@@ -502,7 +505,7 @@ impl SmartIssueMatcher {
     }
 
     /// Generate text representation of activity signals for embedding
-    fn generate_context_text(signals: &ActivitySignals) -> String {
+    pub(crate) fn generate_context_text(signals: &ActivitySignals) -> String {
         let mut parts = Vec::new();
 
         // Git branch (highest signal)
@@ -550,7 +553,7 @@ impl SmartIssueMatcher {
     }
 
     /// Extract issue IDs from text
-    fn extract_issue_ids(&self, text: &str) -> Vec<String> {
+    pub(crate) fn extract_issue_ids(&self, text: &str) -> Vec<String> {
         self.issue_id_pattern
             .find_iter(text)
             .map(|m| m.as_str().to_uppercase())
@@ -573,81 +576,5 @@ impl SmartIssueMatcher {
             })
             .collect::<Vec<_>>()
             .join(", ")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_issue_ids() {
-        let matcher = IssueMatcher::new();
-
-        assert_eq!(
-            matcher.extract_issue_ids("feature/TOKI-9-add-tracking"),
-            vec!["TOKI-9"]
-        );
-
-        assert_eq!(
-            matcher.extract_issue_ids("Fix ABC-123 and DEF-456"),
-            vec!["ABC-123", "DEF-456"]
-        );
-    }
-
-    #[test]
-    fn test_branch_name_highest_priority() {
-        let matcher = IssueMatcher::new();
-
-        let signals = ActivitySignals {
-            git_branch: Some("feature/TOKI-9-new-feature".to_string()),
-            ..Default::default()
-        };
-
-        let candidates = vec![
-            CandidateIssue {
-                external_id: "TOKI-9".to_string(),
-                title: "New feature".to_string(),
-                description: None,
-                status: "in_progress".to_string(),
-                labels: vec![],
-                is_assigned_to_user: false,
-            },
-            CandidateIssue {
-                external_id: "TOKI-10".to_string(),
-                title: "Another issue".to_string(),
-                description: None,
-                status: "open".to_string(),
-                labels: vec![],
-                is_assigned_to_user: true,
-            },
-        ];
-
-        let result = matcher.find_best_match(&signals, &candidates);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().issue_id, "TOKI-9");
-    }
-
-    #[test]
-    fn test_browser_url_detection() {
-        let matcher = IssueMatcher::new();
-
-        let signals = ActivitySignals {
-            browser_urls: vec!["https://plane.so/workspace/project/issues/PROJ-42".to_string()],
-            ..Default::default()
-        };
-
-        let candidates = vec![CandidateIssue {
-            external_id: "PROJ-42".to_string(),
-            title: "Fix bug".to_string(),
-            description: None,
-            status: "open".to_string(),
-            labels: vec![],
-            is_assigned_to_user: false,
-        }];
-
-        let result = matcher.find_best_match(&signals, &candidates);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().issue_id, "PROJ-42");
     }
 }
