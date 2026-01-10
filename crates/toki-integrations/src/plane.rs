@@ -671,7 +671,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Skip due to macOS system configuration issues in test environment"]
     fn test_plane_client_creation() {
         let client = PlaneClient::new(
             "test-key".to_string(),
