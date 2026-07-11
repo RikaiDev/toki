@@ -1,3 +1,8 @@
+<!-- rikai-logo -->
+<p align="center">
+  <img src=".github/assets/logo.svg" alt="toki" width="96" height="96">
+</p>
+
 # Toki
 
 **Automatic time tracking for developers** - Track your work without thinking about it.
